@@ -1,4 +1,4 @@
-package tftp_wire
+package main
 
 import (
 	"reflect"
@@ -42,7 +42,7 @@ func TestSerializationDeserialization(t *testing.T) {
 			t.Errorf("Serializing %#v: expected %q; got %q", test.packet, test.bytes, actualBytes)
 		}
 
-		actualPacket, err := ParsePacket(test.bytes)
+		_, actualPacket, err := ParsePacket(test.bytes)
 		if err != nil {
 			t.Errorf("Unable to parse packet %q: %s", test.bytes, err)
 		} else if !reflect.DeepEqual(test.packet, actualPacket) {
@@ -90,7 +90,7 @@ func TestDeserializationInvalid(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		if p, err := ParsePacket(test); err == nil {
+		if _, p, err := ParsePacket(test); err == nil {
 			t.Errorf("Parsing packet %q: expected error; got %#v", test, p)
 		}
 	}

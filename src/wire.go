@@ -1,4 +1,4 @@
-package tftp_wire
+package main
 
 import (
 	"bytes"
@@ -143,8 +143,7 @@ func parseString(buf []byte) (string, []byte, error) {
 }
 
 // ParsePacket parses a packet from its wire representation.
-func ParsePacket(buf []byte) (p Packet, err error) {
-	var opcode uint16
+func ParsePacket(buf []byte) (opcode uint16, p Packet, err error) {
 	if opcode, _, err = parseUint16(buf); err != nil {
 		return
 	}
