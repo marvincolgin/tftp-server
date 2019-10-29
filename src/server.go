@@ -92,7 +92,7 @@ func processProtocol(dataChannel chan RawPacket, timeout int) {
 		switch opcode {
 		case OpRRQ:
 			packetReq := makePacketRequest(p.Serialize())
-			doReadReq(packetReq, nexus, conn)
+			doReadReq(nexus, conn, rawPacket.Addr, packetReq)
 		case OpWRQ:
 			print("OpWRQ\n")
 			//fmt.Println("Write... type:", reflect.TypeOf(p).Elem(), " packet:", p)
@@ -104,17 +104,20 @@ func processProtocol(dataChannel chan RawPacket, timeout int) {
 			print("OpError\n")
 		}
 
+		fmt.Printf("*** conn.Close() ***\n")
 		conn.Close()
 	}
 }
 
 func doSendError(conn *net.UDPConn, code uint16, msg string) {
+	fmt.Printf("doSendError()::msg:[%s]\n", msg)
 	p := NewPacketError(code, msg)
-
 	conn.Write(p.Serialize())
 }
 
-func doReadReq(packet PacketRequest, nexus *FileNexus, conn *net.UDPConn) {
+func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
+
+	fmt.Printf("doReadReq()::remoteAddr():[%s]\n", remoteAddr.String())
 
 	// Validate OpMode
 	if strings.Compare(strings.ToLower(packet.Mode), "octect") == 0 {
@@ -131,6 +134,59 @@ func doReadReq(packet PacketRequest, nexus *FileNexus, conn *net.UDPConn) {
 		return
 	}
 
-	fmt.Printf("len(entry.Bytes):%d\n", len(entry.Bytes))
+	var curBlock uint16 = 1
+	var curPos int = 0
 
+	// Create ACK Packet (Reusable)
+	ackPacket := PacketAck{}
+	ackBuffer := make([]byte, 4) // ?? sizeof(PacketAck)
+
+	for curPos < len(entry.Bytes) {
+
+		// Set the PacketSize with bounds to the end of file
+		packetSize := curPos + MaxDataBlockSize
+		if packetSize > len(entry.Bytes) {
+			packetSize = len(entry.Bytes)
+		}
+
+		// Send the Data Packet
+		dataPacket := makePacketData(curBlock, entry.Bytes)
+		_, err := conn.WriteToUDP(dataPacket.Serialize(), remoteAddr)
+		if err != nil {
+			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.WriteToUDP()::remoteAddr:[%s]", err.Error(), remoteAddr.String())
+			doSendError(conn, ErrorNotDefined, errmsg)
+			conn.Close() // Should I really do this?!?
+			return
+		}
+
+		// ACK PACKET!
+		for {
+			_, readRemoteAddr, err := conn.ReadFromUDP(ackBuffer)
+			if err != nil {
+				errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.Read()::readRemoteAdrr:[%s]\n", err.Error(), readRemoteAddr)
+				doSendError(conn, ErrorNotDefined, errmsg)
+				// conn.Close() // Should I really do this?!?
+				return
+			}
+
+			if readRemoteAddr.Port != remoteAddr.Port {
+				// Packet from unknown host
+				errmsg := fmt.Sprintf("ERROR: doReadReq()::remoteAddr.Port:[%d] != readRemoteAddr.Port:[%d] ", remoteAddr.Port, readRemoteAddr.Port)
+				doSendError(conn, ErrorUnknownTID, errmsg)
+				// conn.Close() // Should I really do this?!?
+				continue
+			}
+			break
+		}
+
+		err = ackPacket.Parse(ackBuffer)
+		if err != nil {
+			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::AckPacket.Parse()", err.Error())
+			doSendError(conn, ErrorNotDefined, errmsg) // ?? @TODO Is this an OP error?
+			return
+		}
+
+		curPos = curPos + packetSize
+		curBlock = ackPacket.BlockNum + 1
+	}
 }

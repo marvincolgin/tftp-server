@@ -7,6 +7,9 @@ import (
 	"fmt"
 )
 
+// MaxDataBlockSize is set to 512 bytes (per spec)
+const MaxDataBlockSize = 512
+
 // MaxPacketSize larger than a typical mtu (1500), and largest DATA packet (516). may limit the length of filenames in RRQ/WRQs -- RFC1350 doesn't offer a bound for these.
 const MaxPacketSize = 2048
 

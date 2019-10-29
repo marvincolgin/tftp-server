@@ -47,3 +47,16 @@ func makePacketRequest(buf []byte) PacketRequest {
 
 	return p
 }
+
+// makePacketData will create a data packet from params
+func makePacketData(blockNum uint16, buf []byte) PacketData {
+
+	p := PacketData{}
+
+	p.BlockNum = blockNum
+
+	p.Data = make([]byte, len(buf))
+	copy(p.Data, buf)
+
+	return p
+}
