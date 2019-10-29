@@ -7,10 +7,10 @@ import (
 	"fmt"
 )
 
-// larger than a typical mtu (1500), and largest DATA packet (516).
-// may limit the length of filenames in RRQ/WRQs -- RFC1350 doesn't offer a bound for these.
+// MaxPacketSize larger than a typical mtu (1500), and largest DATA packet (516). may limit the length of filenames in RRQ/WRQs -- RFC1350 doesn't offer a bound for these.
 const MaxPacketSize = 2048
 
+// @TODO write up desc
 const (
 	OpRRQ   uint16 = 1
 	OpWRQ          = 2
@@ -19,7 +19,7 @@ const (
 	OpError        = 5
 )
 
-// packet is the interface met by all packet structs
+// Packet is the interface met by all packet structs
 type Packet interface {
 	// Parse parses a packet from its wire representation
 	Parse([]byte) error
@@ -34,6 +34,7 @@ type PacketRequest struct {
 	Mode     string
 }
 
+// Parse @TODO write up desc
 func (p *PacketRequest) Parse(buf []byte) (err error) {
 	if p.Op, buf, err = parseUint16(buf); err != nil {
 		return err
@@ -47,6 +48,7 @@ func (p *PacketRequest) Parse(buf []byte) (err error) {
 	return nil
 }
 
+// Serialize @TODO write up desc
 func (p *PacketRequest) Serialize() []byte {
 	buf := make([]byte, 2+len(p.Filename)+1+len(p.Mode)+1)
 	binary.BigEndian.PutUint16(buf, p.Op)
@@ -61,6 +63,7 @@ type PacketData struct {
 	Data     []byte
 }
 
+// Parse @TODO write up desc
 func (p *PacketData) Parse(buf []byte) (err error) {
 	buf = buf[2:] // skip over op
 	if p.BlockNum, buf, err = parseUint16(buf); err != nil {
@@ -70,6 +73,7 @@ func (p *PacketData) Parse(buf []byte) (err error) {
 	return nil
 }
 
+// Serialize @TODO write up desc
 func (p *PacketData) Serialize() []byte {
 	buf := make([]byte, 4+len(p.Data))
 	binary.BigEndian.PutUint16(buf, OpData)
@@ -83,6 +87,7 @@ type PacketAck struct {
 	BlockNum uint16
 }
 
+// Parse @TODO write up desc
 func (p *PacketAck) Parse(buf []byte) (err error) {
 	buf = buf[2:] // skip over op
 	if p.BlockNum, buf, err = parseUint16(buf); err != nil {
@@ -91,6 +96,7 @@ func (p *PacketAck) Parse(buf []byte) (err error) {
 	return nil
 }
 
+// Serialize @TODO write up desc
 func (p *PacketAck) Serialize() []byte {
 	buf := make([]byte, 4)
 	binary.BigEndian.PutUint16(buf, OpAck)
@@ -104,6 +110,7 @@ type PacketError struct {
 	Msg  string
 }
 
+// Parse @TODO write up desc
 func (p *PacketError) Parse(buf []byte) (err error) {
 	buf = buf[2:] // skip over op
 	if p.Code, buf, err = parseUint16(buf); err != nil {
@@ -115,6 +122,7 @@ func (p *PacketError) Parse(buf []byte) (err error) {
 	return nil
 }
 
+// Serialize @TODO write up desc
 func (p *PacketError) Serialize() []byte {
 	buf := make([]byte, 4+len(p.Msg)+1)
 	binary.BigEndian.PutUint16(buf, OpError)
