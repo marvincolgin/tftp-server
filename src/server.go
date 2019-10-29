@@ -134,23 +134,28 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		return
 	}
 
-	var curBlock uint16 = 1
-	var curPos int = 0
-
 	// Create ACK Packet (Reusable)
 	ackPacket := PacketAck{}
 	ackBuffer := make([]byte, 4) // ?? sizeof(PacketAck)
 
-	for curPos < len(entry.Bytes) {
+	// Loop through the entire file
+	var curBlock uint16 = 1
+	var curPos int = 0
+
+	for curPos <= len(entry.Bytes) {
+
+		// *** @TODO ZERO BYTE WILL SIGNAL END
 
 		// Set the PacketSize with bounds to the end of file
-		packetSize := curPos + MaxDataBlockSize
-		if packetSize > len(entry.Bytes) {
-			packetSize = len(entry.Bytes)
+		packetSize := MaxDataBlockSize
+		if curPos+packetSize > len(entry.Bytes) {
+			packetSize = len(entry.Bytes) - curPos
 		}
 
+		fmt.Printf("STATUS: curPos:[%d] curBlock:[%d] len(entry.Bytes):[%d] packetSize:[%d]\n", curPos, curBlock, len(entry.Bytes), packetSize)
+
 		// Send the Data Packet
-		dataPacket := makePacketData(curBlock, entry.Bytes)
+		dataPacket := makePacketData(curBlock, entry.Bytes, curPos, packetSize)
 		_, err := conn.WriteToUDP(dataPacket.Serialize(), remoteAddr)
 		if err != nil {
 			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.WriteToUDP()::remoteAddr:[%s]", err.Error(), remoteAddr.String())
@@ -159,13 +164,13 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 			return
 		}
 
-		// ACK PACKET!
+		// WAIT for our ACK packet
 		for {
 			_, readRemoteAddr, err := conn.ReadFromUDP(ackBuffer)
 			if err != nil {
 				errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.Read()::readRemoteAdrr:[%s]\n", err.Error(), readRemoteAddr)
 				doSendError(conn, ErrorNotDefined, errmsg)
-				// conn.Close() // Should I really do this?!?
+				// conn.Close() I should *NOT* do this, as it's an error packet, wait for retry
 				return
 			}
 
@@ -173,20 +178,33 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 				// Packet from unknown host
 				errmsg := fmt.Sprintf("ERROR: doReadReq()::remoteAddr.Port:[%d] != readRemoteAddr.Port:[%d] ", remoteAddr.Port, readRemoteAddr.Port)
 				doSendError(conn, ErrorUnknownTID, errmsg)
-				// conn.Close() // Should I really do this?!?
+				// conn.Close() I should *NOT* do this, it's not a reason to disconnect, it's just a bogus packet
 				continue
 			}
+
+			// We got our ACK, if we are here...
 			break
 		}
 
+		// Parse the ACK Packet
 		err = ackPacket.Parse(ackBuffer)
 		if err != nil {
 			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::AckPacket.Parse()", err.Error())
 			doSendError(conn, ErrorNotDefined, errmsg) // ?? @TODO Is this an OP error?
 			return
 		}
-
-		curPos = curPos + packetSize
+		// Set current block to be the ackPacket's blocknum (as it could have incremented this value in resends of Ack)
 		curBlock = ackPacket.BlockNum + 1
+
+		// Advance our position in the file
+		if packetSize == 0 {
+			// this last packet was a terminating packet, as it's is 0 bytes and it just so happens
+			break
+		} else {
+			curPos = curPos + packetSize
+		}
+
 	}
+
+	fmt.Printf("SUCCESS: transferred file:[%s] to client:[%s]\n", packet.Filename, remoteAddr.String())
 }

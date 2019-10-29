@@ -49,14 +49,14 @@ func makePacketRequest(buf []byte) PacketRequest {
 }
 
 // makePacketData will create a data packet from params
-func makePacketData(blockNum uint16, buf []byte) PacketData {
+func makePacketData(blockNum uint16, buf []byte, pos int, size int) PacketData {
 
 	p := PacketData{}
 
 	p.BlockNum = blockNum
 
-	p.Data = make([]byte, len(buf))
-	copy(p.Data, buf)
+	p.Data = make([]byte, size)
+	copy(p.Data, buf[pos:pos+size])
 
 	return p
 }
