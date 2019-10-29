@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"strings"
@@ -126,30 +125,12 @@ func doReadReq(packet PacketRequest, nexus *FileNexus, conn *net.UDPConn) {
 		return
 	}
 
-	// Load the File into the Nexus (if not found)
-	if _, ok := nexus.entries[packet.Filename]; !ok {
-		data, err := ioutil.ReadFile(packet.Filename)
-		if err == nil {
-			fmt.Printf("err==nil\n")
-			fmt.Printf("len(data):[%d]\n", len(data))
-
-			nexus.entries[packet.Filename] = NewFileEntry()
-			nexus.entries[packet.Filename].Bytes = make([]byte, len(data))
-			fmt.Printf("copy")
-			copy(nexus.entries[packet.Filename].Bytes, data)
-			fmt.Printf("done.")
-		} else {
-			errmsg := fmt.Sprintf("ERROR: unable to ReadFile()::Error():[%s] filename:[%s]", err.Error(), packet.Filename)
-			fmt.Printf("%s\n", errmsg)
-			doSendError(conn, ErrorFileNotFound, errmsg)
-			conn.Close()
-			return
-		}
+	// Load the File into Nexus
+	ok, entry := nexus.GetEntry(conn, packet.Filename)
+	if !ok {
+		return
 	}
 
-	//
-	if entry, ok := nexus.entries[packet.Filename]; !ok {
-		fmt.Println("len:", len(entry.Bytes))
-	}
+	fmt.Printf("len(entry.Bytes):%d\n", len(entry.Bytes))
 
 }

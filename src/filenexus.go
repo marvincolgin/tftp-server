@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"io/ioutil"
+	"net"
 	"sync"
 )
 
@@ -28,6 +31,64 @@ func NewFileNexus() *FileNexus {
 	return &FileNexus{
 		entries: make(map[string]*FileEntry),
 	}
+}
+
+// GetEntry will retrieve the Entry for a given filename/connection (filling the file data if not loaded)
+func (nexus *FileNexus) GetEntry(conn *net.UDPConn, filename string) (bool, *FileEntry) {
+	// since the spec denotes:
+	// "Requests should be handled concurrently, but files being written to the server must not be visible until completed"
+	// .. as a result, I'm taking this to mean that two clients can be using the file at the same time
+	// .. this could result in Client-A reading "fileA.txt", while Client-B writes "fileA.txt"
+	// .. so we are going to key our hashmap with Client+Filename
+
+	success := false
+	key := fmt.Sprintf("%s$%s", conn.RemoteAddr(), filename)
+
+	// Is FILE loaded?
+	if _, ok := nexus.entries[key]; ok {
+
+		success = true
+
+	} else {
+
+		if fileExists(filename) {
+
+			// Attempt to Load the FILE
+			data, err := ioutil.ReadFile(filename)
+			if err == nil {
+
+				// Perform Load
+				nexus.entries[key] = NewFileEntry()
+				nexus.entries[key].Bytes = make([]byte, len(data))
+				copy(nexus.entries[key].Bytes, data)
+
+				success = true
+
+			} else {
+
+				// ERROR: unable to load
+				errmsg := fmt.Sprintf("ERROR: unable to ReadFile()::Error():[%s] filename:[%s]", err.Error(), filename)
+				fmt.Printf("%s\n", errmsg)
+				doSendError(conn, ErrorFileNotFound, errmsg)
+				conn.Close()
+
+			}
+
+		} else { // WRQ: New File to be Created
+
+			nexus.entries[key] = NewFileEntry()
+			nexus.entries[key].Bytes = make([]byte, 0)
+			success = true
+		}
+	}
+
+	var entry *FileEntry = nil
+	if success {
+		entry = nexus.entries[key]
+	}
+
+	return success, entry
+
 }
 
 func (nexus *FileNexus) saveBytes(filename string, rawbytes []byte) {
