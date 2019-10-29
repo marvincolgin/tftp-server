@@ -20,6 +20,6 @@ func main() {
 	flag.Parse()
 	serverIPPort := ip + ":" + strconv.Itoa(port)
 
-	launch(serverIPPort, numThreads, timeout)
+	ListenAndServe(serverIPPort, numThreads, timeout)
 
 }
