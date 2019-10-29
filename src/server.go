@@ -41,6 +41,7 @@ func ListenAndServe(serverIPPort string, numThreads int, timeout int) {
 
 	// Create a channel of size = # of threads
 	dataChannel := make(chan RawPacket, numThreads)
+	defer close(dataChannel)
 
 	fmt.Printf("Threads: %d Starting...", numThreads)
 	for i := 0; i < numThreads; i++ {
@@ -64,7 +65,6 @@ func ListenAndServe(serverIPPort string, numThreads int, timeout int) {
 		dataChannel <- request
 	}
 
-	close(dataChannel)
 }
 
 func processProtocol(dataChannel chan RawPacket, timeout int) {
