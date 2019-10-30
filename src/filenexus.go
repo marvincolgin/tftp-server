@@ -33,8 +33,13 @@ func NewFileNexus() *FileNexus {
 	}
 }
 
+// makeHashKey will create a index string based for accessing the Hashmap
+func (nexus *FileNexus) makeHashKey(remoteAddr string, filename string) string {
+	return fmt.Sprintf("%s$%s", remoteAddr, filename)
+}
+
 // GetEntry will retrieve the Entry for a given filename/connection (filling the file data if not loaded)
-func (nexus *FileNexus) GetEntry(conn *net.UDPConn, filename string) (bool, *FileEntry) {
+func (nexus *FileNexus) GetEntry(conn *net.UDPConn, remoteAddr, filename string) (bool, *FileEntry) {
 	// since the spec denotes:
 	// "Requests should be handled concurrently, but files being written to the server must not be visible until completed"
 	// .. as a result, I'm taking this to mean that two clients can be using the file at the same time
@@ -42,7 +47,7 @@ func (nexus *FileNexus) GetEntry(conn *net.UDPConn, filename string) (bool, *Fil
 	// .. so we are going to key our hashmap with Client+Filename
 
 	success := false
-	key := fmt.Sprintf("%s$%s", conn.RemoteAddr(), filename)
+	key := nexus.makeHashKey(remoteAddr, filename)
 
 	// Is FILE loaded?
 	if _, ok := nexus.entries[key]; ok {
@@ -91,14 +96,28 @@ func (nexus *FileNexus) GetEntry(conn *net.UDPConn, filename string) (bool, *Fil
 
 }
 
-func (nexus *FileNexus) saveBytes(filename string, rawbytes []byte) {
+func (nexus *FileNexus) saveBytes(remoteAddr string, filename string) error {
+
+	// Get the Key to the HashMap for entry
+	key := nexus.makeHashKey(remoteAddr, filename)
 
 	// Acquire Mutex and agree to release at end of func()
-	nexus.entries[filename].Mutex.Lock()
-	defer nexus.entries[filename].Mutex.Unlock()
+	nexus.entries[key].Mutex.Lock()
+	defer nexus.entries[key].Mutex.Unlock()
 
-	// Set the bytes for the file
-	nexus.entries[filename].Bytes = rawbytes
+	// Perform write to file
+	if fileEntry, ok := nexus.entries[key]; ok {
+
+		err := ioutil.WriteFile(filename, fileEntry.Bytes, 0644)
+		if err != nil {
+			return fmt.Errorf("FileNexus.saveBytes(): could not write file:[%s], err.Error():[%s]", filename, err.Error())
+		}
+
+	} else {
+		return fmt.Errorf("FileNexus.saveBytes(): key could not be found in hashmap, key:[%s]", key)
+	}
+
+	return nil
 }
 
 func (nexus *FileNexus) loadBytes(filename string, rawbytes []byte) []byte {

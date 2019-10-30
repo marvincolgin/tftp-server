@@ -154,7 +154,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 	}
 
 	// Load the File into Nexus
-	ok, entry := nexus.GetEntry(conn, packet.Filename)
+	ok, entry := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
 	if !ok {
 		return
 	}
@@ -253,7 +253,7 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 	}
 
 	// Load the File into Nexus
-	ok, entry := nexus.GetEntry(conn, packet.Filename)
+	ok, entry := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
 	if !ok {
 		return
 	}
@@ -344,6 +344,12 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 
 	}
 
+	// COMPLETE: Output and Save File
 	fmt.Fprintf(os.Stdout, "WRITE: SUCCESS file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
-	// @TODO Write out File
+	err := nexus.saveBytes(remoteAddr.String(), packet.Filename)
+	if err != nil {
+		fmt.Fprintf(os.Stdout, "WRITE: ERROR unable to save file:[%s]", packet.Filename)
+	}
+
+	// @TODO Nullify entry
 }
