@@ -337,7 +337,7 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 		// 		length variable of data used in alloc (this will prevent the thrashing of memory to constantly move
 		//      this array around to seq memory)
 		if cntReadFromUDP > 4 {
-			entry.Bytes = append(entry.Bytes, packetData.Data[4:cntReadFromUDP]...) // NOTE: Slice is used: 4 bytes for OP&BlockNum, then the rest of the data
+			entry.Bytes = append(entry.Bytes, packetData.Data[:cntReadFromUDP-4]...) // NOTE: Slice is used: 4 bytes for OP&BlockNum, then the rest of the data
 		}
 		cntReadActual = cntReadFromUDP
 		curBlock = curBlock + 1
