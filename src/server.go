@@ -7,122 +7,135 @@ import (
 	"strings"
 )
 
-// RawPacket is the raw-bytes received over wire, with the RemoteAddr saved
-type RawPacket struct {
-	Addr  *net.UDPAddr
-	bytes []byte
-}
-
-func (packet RawPacket) getBytes() []byte {
-	return packet.bytes
-}
-
-func (packet RawPacket) getAddr() *net.UDPAddr {
-	return packet.Addr
-}
-
-// ListenAndServe is the engine for the tftp-server
-func ListenAndServe(serverIPPort string, numThreads int, timeout int) {
+// SetupListener will establish a listener on the given Server IP/Port
+func SetupListener(serverIPPort string) *net.UDPConn {
 
 	addr, err := net.ResolveUDPAddr("udp", serverIPPort)
 	if err != nil {
-		fmt.Printf("ERROR: ResolveUDPAddr()::serverIPPort:[%s]\n", serverIPPort)
+		fmt.Fprintf(os.Stderr, "ERROR: ResolveUDPAddr()::serverIPPort:[%s]\n", serverIPPort)
 		os.Exit(1)
 	}
 
 	conn, err := net.ListenUDP("udp", addr)
 	if err != nil {
-		fmt.Printf("ERROR: ListenUDP()::addr:[%s]\n", addr)
+		fmt.Fprintf(os.Stderr, "ERROR: ListenUDP()::addr:[%s]\n", addr)
 		os.Exit(2)
 	}
 
-	fmt.Println("Listening: " + serverIPPort)
+	fmt.Fprintln(os.Stdout, "Listening: "+serverIPPort)
 
-	// Create a channel of size = # of threads
+	return conn
+}
+
+// ListenAndServe is the engine for the tftp-server
+func ListenAndServe(serverIPPort string, numThreads int, timeout int) {
+
+	// Listener Start
+	conn := SetupListener(serverIPPort)
+
+	// Create a *buffered* channel = # of threads, as one thread per channel to prevent blocks/dropped data
 	dataChannel := make(chan RawPacket, numThreads)
 	defer close(dataChannel)
 
-	fmt.Printf("Threads: %d Starting...", numThreads)
+	// Central repo for File data and mutexes
+	nexus := NewFileNexus()
+
+	// Create threads and pass the dataChannel
+	fmt.Fprintf(os.Stdout, "Threads: %d Starting...", numThreads)
 	for i := 0; i < numThreads; i++ {
-		go processProtocol(dataChannel, timeout)
+		go processProtocol(nexus, dataChannel, timeout)
 	}
-	fmt.Printf("Done\n")
+	fmt.Fprintf(os.Stdout, "Done\n")
 
-	fmt.Printf("Listener: Running\n")
+	// Forever Loop...Listening
+	fmt.Fprintf(os.Stdout, "Listener: Loop Running\n")
+	rcvBuf := make([]byte, MaxPacketSize)
 	for {
-		buf := make([]byte, MaxPacketSize)
-		n, remoteAddr, _ := conn.ReadFromUDP(buf)
 
-		fmt.Printf("Packet::n:[%d]\n", n)
-		fmt.Printf("Packet::remoteAddr:[%s]\n", remoteAddr)
+		// Blocking read from Listener
+		cnt, remoteAddr, _ := conn.ReadFromUDP(rcvBuf)
 
-		request := RawPacket{
+		// Bundle raw packet bytes with IP, as thread won't have access to "conn"
+		rawPacket := RawPacket{
 			Addr:  remoteAddr,
-			bytes: buf[:n],
+			bytes: rcvBuf[:cnt],
 		}
 
-		dataChannel <- request
+		// fan-out the bytes to the *buffered* channel for goroutines to process
+		dataChannel <- rawPacket
 	}
 
 }
 
-func processProtocol(dataChannel chan RawPacket, timeout int) {
+func createUDPEndPoint(addr string, port int) (bool, *net.UDPAddr, *net.UDPConn) {
 
-	nexus := NewFileNexus()
+	// Establish Connection
+	localAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", addr, port))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR: resolveUDPAddr(). Dumping Packet")
+		return false, nil, nil
+	}
+	conn, err := net.ListenUDP("udp", localAddr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR: listenUDP(). Dumping Packet")
+		return false, localAddr, nil
+	}
+
+	return true, localAddr, conn
+}
+
+// processProtocol goroutine to process data received by main-thread and "fanned out"
+func processProtocol(nexus *FileNexus, dataChannel chan RawPacket, timeout int) {
 
 	for {
+
+		// read packet out of the channel to process
 		rawPacket := <-dataChannel
 
-		// Establish Connection
-		localAddr, err := net.ResolveUDPAddr("udp", ":0")
-		if err != nil {
-			fmt.Println("ERROR: resolveUDPAddr(). Dumping Packet")
-			continue
-		}
-		conn, err := net.ListenUDP("udp", localAddr)
-		if err != nil {
-			fmt.Println("ERROR: listenUDP(). Dumping Packet")
+		success, _, conn := createUDPEndPoint("", 0)
+		if !success {
 			continue
 		}
 
 		// get raw bytes from packet
 		rawRequestBuffer := rawPacket.getBytes()
 
-		opcode, p, err := ParsePacket(rawRequestBuffer)
+		opcode, p, _ := ParsePacket(rawRequestBuffer) // @TODO discarded err
 		switch opcode {
 		case OpRRQ:
+			// @TODO re-evaluate this..., do I need makePacketRequest, can I use wire.go?
 			packetReq := makePacketRequest(p.Serialize())
 			doReadReq(nexus, conn, rawPacket.Addr, packetReq)
 		case OpWRQ:
-			print("OpWRQ\n")
+			fmt.Fprintf(os.Stdout, "OpWRQ\n")
 			//fmt.Println("Write... type:", reflect.TypeOf(p).Elem(), " packet:", p)
 		case OpData:
-			print("OpData\n")
+			fmt.Fprintf(os.Stdout, "OpData\n")
 		case OpAck:
-			print("OpAck\n")
+			fmt.Fprintf(os.Stdout, "OpAck\n")
 		case OpError:
-			print("OpError\n")
+			fmt.Fprintf(os.Stdout, "OpError\n")
 		}
 
-		fmt.Printf("*** conn.Close() ***\n")
+		// Close the connection as we are done processing the packet
 		conn.Close()
 	}
 }
 
 func doSendError(conn *net.UDPConn, code uint16, msg string) {
-	fmt.Printf("doSendError()::msg:[%s]\n", msg)
+	fmt.Fprintf(os.Stderr, "doSendError()::msg:[%s]\n", msg)
 	p := NewPacketError(code, msg)
 	conn.Write(p.Serialize())
 }
 
 func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
 
-	fmt.Printf("doReadReq()::remoteAddr():[%s]\n", remoteAddr.String())
+	fmt.Fprintf(os.Stdout, "doReadReq()::remoteAddr():[%s]\n", remoteAddr.String())
 
 	// Validate OpMode
 	if strings.Compare(strings.ToLower(packet.Mode), "octect") == 0 {
 		errmsg := fmt.Sprintf("ERROR: mode:[%s] is not supported.\n", packet.Mode)
-		fmt.Printf("%s\n", errmsg)
+		fmt.Fprintln(os.Stderr, errmsg)
 		doSendError(conn, ErrorNotDefined, errmsg)
 		conn.Close()
 		return
@@ -152,7 +165,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 			packetSize = len(entry.Bytes) - curPos
 		}
 
-		fmt.Printf("STATUS: curPos:[%d] curBlock:[%d] len(entry.Bytes):[%d] packetSize:[%d]\n", curPos, curBlock, len(entry.Bytes), packetSize)
+		// fmt.Fprintln(os.Stdout, "STATUS: curPos:[%d] curBlock:[%d] len(entry.Bytes):[%d] packetSize:[%d]\n", curPos, curBlock, len(entry.Bytes), packetSize)
 
 		// Send the Data Packet
 		dataPacket := makePacketData(curBlock, entry.Bytes, curPos, packetSize)
@@ -160,7 +173,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		if err != nil {
 			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.WriteToUDP()::remoteAddr:[%s]", err.Error(), remoteAddr.String())
 			doSendError(conn, ErrorNotDefined, errmsg)
-			conn.Close() // Should I really do this?!?
+			conn.Close() // @TODO: Should I really do this?!?
 			return
 		}
 
@@ -206,5 +219,5 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 
 	}
 
-	fmt.Printf("SUCCESS: transferred file:[%s] to client:[%s]\n", packet.Filename, remoteAddr.String())
+	fmt.Fprintf(os.Stdout, "SUCCESS: transferred file:[%s] to client:[%s]\n", packet.Filename, remoteAddr.String())
 }

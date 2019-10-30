@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"net"
 )
 
 // RFC: https://www.ietf.org/rfc/rfc1350.txt (Page 9)
@@ -59,4 +60,18 @@ func makePacketData(blockNum uint16, buf []byte, pos int, size int) PacketData {
 	copy(p.Data, buf[pos:pos+size])
 
 	return p
+}
+
+// RawPacket is the raw-bytes received over wire, with the RemoteAddr saved
+type RawPacket struct {
+	Addr  *net.UDPAddr
+	bytes []byte
+}
+
+func (packet RawPacket) getBytes() []byte {
+	return packet.bytes
+}
+
+func (packet RawPacket) getAddr() *net.UDPAddr {
+	return packet.Addr
 }
