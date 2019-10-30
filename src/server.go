@@ -22,7 +22,7 @@ func SetupListener(serverIPPort string) *net.UDPConn {
 		os.Exit(2)
 	}
 
-	fmt.Fprintln(os.Stdout, "Listening: "+serverIPPort)
+	fmt.Fprintln(os.Stdout, "Listener: "+serverIPPort)
 
 	return conn
 }
@@ -130,7 +130,7 @@ func doSendError(conn *net.UDPConn, code uint16, msg string) {
 
 func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
 
-	fmt.Fprintf(os.Stdout, "doReadReq()::remoteAddr():[%s]\n", remoteAddr.String())
+	fmt.Fprintf(os.Stdout, "READ: REQUEST file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
 
 	// Validate OpMode
 	if strings.Compare(strings.ToLower(packet.Mode), "octect") == 0 {
@@ -219,5 +219,5 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 
 	}
 
-	fmt.Fprintf(os.Stdout, "SUCCESS: transferred file:[%s] to client:[%s]\n", packet.Filename, remoteAddr.String())
+	fmt.Fprintf(os.Stdout, "READ: SUCCESS file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
 }
