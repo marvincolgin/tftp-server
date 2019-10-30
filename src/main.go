@@ -1,25 +1,27 @@
 package main
 
 import (
-	"flag"
-	"strconv"
+	"fmt"
+	"os"
+
+	"github.com/pborman/getopt"
 )
-
-var port, numThreads, timeout int
-var ip string
-
-func init() {
-	flag.StringVar(&ip, "ip", "127.0.0.1", "Listener IP")
-	flag.IntVar(&port, "port", 69, "Listener Port")
-	flag.IntVar(&numThreads, "threads", 16, "Max Threads")
-	flag.IntVar(&timeout, "timeout", 1, "Timeout (sec)")
-}
 
 func main() {
 
-	flag.Parse()
-	serverIPPort := ip + ":" + strconv.Itoa(port)
+	optIP := getopt.StringLong("ip", 'i', "127.0.0.1", "Listener IP")
+	optPort := getopt.IntLong("port", 'p', 69, "Listener Port")
+	optThreads := getopt.IntLong("threads", 't', 16, "Max Threads")
+	optTimeout := getopt.IntLong("timeout", 'o', 1, "Timeout (sec)")
+	optHelp := getopt.BoolLong("help", 0, "Help")
+	getopt.Parse()
 
-	ListenAndServe(serverIPPort, numThreads, timeout)
+	if *optHelp {
+		getopt.Usage()
+		os.Exit(0)
+	}
 
+	serverIPPort := fmt.Sprintf("%s:%d", *optIP, *optPort)
+
+	ListenAndServe(serverIPPort, *optThreads, *optTimeout)
 }
