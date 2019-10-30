@@ -77,7 +77,7 @@ func (nexus *FileNexus) GetEntry(conn *net.UDPConn, filename string) (bool, *Fil
 		} else { // WRQ: New File to be Created
 
 			nexus.entries[key] = NewFileEntry()
-			nexus.entries[key].Bytes = make([]byte, 0)
+			nexus.entries[key].Bytes = nil // Officially, nil is correct vs 'make([]byte, 0)'
 			success = true
 		}
 	}

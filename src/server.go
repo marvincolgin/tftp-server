@@ -107,8 +107,9 @@ func processProtocol(nexus *FileNexus, dataChannel chan RawPacket, timeout int) 
 			packetReq := makePacketRequest(p.Serialize())
 			doReadReq(nexus, conn, rawPacket.Addr, packetReq)
 		case OpWRQ:
-			fmt.Fprintf(os.Stdout, "OpWRQ\n")
-			//fmt.Println("Write... type:", reflect.TypeOf(p).Elem(), " packet:", p)
+			// @TODO re-evaluate this..., do I need makePacketRequest, can I use wire.go?
+			packetReq := makePacketRequest(p.Serialize())
+			doWriteReq(nexus, conn, rawPacket.Addr, packetReq)
 		case OpData:
 			fmt.Fprintf(os.Stdout, "OpData\n")
 		case OpAck:
@@ -122,28 +123,47 @@ func processProtocol(nexus *FileNexus, dataChannel chan RawPacket, timeout int) 
 	}
 }
 
+// doSendError will send an error packet on conn to client
 func doSendError(conn *net.UDPConn, code uint16, msg string) {
 	fmt.Fprintf(os.Stderr, "doSendError()::msg:[%s]\n", msg)
 	p := NewPacketError(code, msg)
 	conn.Write(p.Serialize())
 }
 
+// doValidateOpMode we only support binary aka octect at this time
+func doValidateOpMode(conn *net.UDPConn, mode string) bool {
+
+	if strings.Compare(strings.ToLower(mode), "octect") == 0 {
+		errmsg := fmt.Sprintf("ERROR: mode:[%s] is not supported.\n", mode)
+		fmt.Fprintln(os.Stderr, errmsg)
+		doSendError(conn, ErrorNotDefined, errmsg)
+		conn.Close()
+		return false
+	}
+	return true
+}
+
+// doReadReq will process the incoming request packet and continue until file req processed
 func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
 
 	fmt.Fprintf(os.Stdout, "READ: REQUEST file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
 
 	// Validate OpMode
-	if strings.Compare(strings.ToLower(packet.Mode), "octect") == 0 {
-		errmsg := fmt.Sprintf("ERROR: mode:[%s] is not supported.\n", packet.Mode)
-		fmt.Fprintln(os.Stderr, errmsg)
-		doSendError(conn, ErrorNotDefined, errmsg)
-		conn.Close()
+	if !doValidateOpMode(conn, packet.Mode) {
 		return
 	}
 
 	// Load the File into Nexus
 	ok, entry := nexus.GetEntry(conn, packet.Filename)
 	if !ok {
+		return
+	}
+
+	// File Exists?
+	if entry.Bytes == nil {
+		errmsg := fmt.Sprintf("ERROR: Requested file does not exist, file:[%s]", packet.Filename)
+		doSendError(conn, ErrorFileNotFound, errmsg)
+		conn.Close()
 		return
 	}
 
@@ -165,7 +185,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 			packetSize = len(entry.Bytes) - curPos
 		}
 
-		// fmt.Fprintln(os.Stdout, "STATUS: curPos:[%d] curBlock:[%d] len(entry.Bytes):[%d] packetSize:[%d]\n", curPos, curBlock, len(entry.Bytes), packetSize)
+		// fmt.Fprint(os.Stdout, "READ: STATUS curPos:[%d] curBlock:[%d] len(entry.Bytes):[%d] packetSize:[%d]\n", curPos, curBlock, len(entry.Bytes), packetSize)
 
 		// Send the Data Packet
 		dataPacket := makePacketData(curBlock, entry.Bytes, curPos, packetSize)
@@ -220,4 +240,110 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 	}
 
 	fmt.Fprintf(os.Stdout, "READ: SUCCESS file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
+}
+
+// doWriteReq will process the incoming request packet and continue until file req processed
+func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
+
+	fmt.Fprintf(os.Stdout, "WRITE: REQUEST file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
+
+	// Validate OpMode
+	if !doValidateOpMode(conn, packet.Mode) {
+		return
+	}
+
+	// Load the File into Nexus
+	ok, entry := nexus.GetEntry(conn, packet.Filename)
+	if !ok {
+		return
+	}
+
+	// Zero out the file
+	if len(entry.Bytes) > 0 {
+		entry.Bytes = nil
+	}
+
+	// Create ACK Packet (Reusable)
+	ackPacket := PacketAck{}
+	packetData := PacketData{}
+	rcvBuf := make([]byte, MaxPacketSize) // Data comes in as 2048 packets
+
+	// First Block will be zero (0) in response to REQ
+	var curBlock uint16 = 0
+
+	cntReadActual := MaxDataBlockSize + 4 // 4 bytes is BlockNum?
+
+	for {
+
+		// Send the ACK Packet
+		ackPacket.BlockNum = curBlock
+		_, err := conn.WriteToUDP(ackPacket.Serialize(), remoteAddr)
+		if err != nil {
+			errmsg := fmt.Sprintf("ERROR:[%s] doWriteReq()::conn.WriteToUDP()::remoteAddr:[%s]", err.Error(), remoteAddr.String())
+			doSendError(conn, ErrorNotDefined, errmsg)
+			return
+		}
+
+		// Short Packet, most likely the END
+		if cntReadActual < MaxDataBlockSize+4 {
+
+			// 4 Bytes is the official END (as it's a data packet with no DATA).. otherwise, it is an error
+			if cntReadActual != 4 {
+				// @TODO: Are these last bytes getting to the file?!?!?
+				fmt.Fprintf(os.Stderr, "ERROR: doWriteReq()::Incomplete Packet.cntRead:[%d]\n", cntReadActual)
+			} else {
+				// Normal
+				// fmt.Fprintf(os.Stdout, "WRITE: Got Short Packet, 4 bytes.\n")
+			}
+			break
+		}
+
+		var cntReadFromUDP int = 0
+		var clientAddr *net.UDPAddr
+
+		for {
+			cntReadFromUDP, clientAddr, err = conn.ReadFromUDP(rcvBuf)
+			if err != nil {
+				errmsg := fmt.Sprintf("ERROR: doWriteReq()::conn.ReadFromUDP()::remoteAddr:[%s]::err.Error():[%s]\n", remoteAddr, err.Error())
+				doSendError(conn, ErrorNotDefined, errmsg)
+				return
+			}
+
+			if clientAddr.Port != remoteAddr.Port {
+				// Packet from unknown host
+				errmsg := fmt.Sprintf("ERROR: doWriteReq()::Received packet from unknown host: " + clientAddr.String())
+				doSendError(conn, ErrorUnknownTID, errmsg)
+				continue
+			}
+			break
+		}
+
+		err = packetData.Parse(rcvBuf)
+		if err != nil {
+			errmsg := fmt.Sprintf("ERROR: doWriteReq()::PacketData.Parse()::err.Error():[%s]", err.Error())
+			doSendError(conn, ErrorIllegalOp, errmsg)
+			return
+		}
+
+		// fmt.Fprintf(os.Stdout, "WRITE: STATUS curBlock:[%d] len(entry.Bytes):[%d] cntReadFromUDP:[%d]\n", curBlock, len(entry.Bytes), cntReadFromUDP)
+
+		// Out of order, as this isn't the next seq block req. As a result, we will loop and re-ack what we want
+		if packetData.BlockNum-1 != curBlock {
+			continue
+		}
+
+		// Append the new Bytes to the end
+		// @TODO optimize: make Nexus func to perform this work, but alloc an ever increasing size and maintain a
+		// 		length variable of data used in alloc (this will prevent the thrashing of memory to constantly move
+		//      this array around to seq memory)
+		if cntReadFromUDP > 4 {
+			entry.Bytes = append(entry.Bytes, packetData.Data[4:cntReadFromUDP]...) // NOTE: Slice is used: 4 bytes for OP&BlockNum, then the rest of the data
+		}
+		cntReadActual = cntReadFromUDP
+		curBlock = curBlock + 1
+
+	}
+
+	fmt.Fprintf(os.Stdout, "WRITE: SUCCESS file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
+	// @TODO Write out File
 }
