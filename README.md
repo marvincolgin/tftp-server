@@ -82,8 +82,13 @@ go test
 
 The following scripts will great two large files, one with a filesize that is even 512 blocks, the other is not. Compare the two MD5 hashs to confirm that the same file generated locally, sent to the tftp-server, then pulled back down is the same.
 
+*Example*
 ```
 cd test
-./test-put.sh
-./test-get.sh
+./test.sh
+
+ae2797df6804b7653d697f9a869e4007  test-even.dat
+37d0ee31bb8827f75c1c69dca888d83c  test-odd.dat
+ae2797df6804b7653d697f9a869e4007  test-even.dat
+37d0ee31bb8827f75c1c69dca888d83c  test-odd.dat
 ```
