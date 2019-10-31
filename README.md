@@ -90,6 +90,7 @@ READ: SUCCESS file:[test-odd.dat], client:[127.0.0.1:61075]
 
 ### Unit Test
 ```
+cd src
 go test
 ```
 
