@@ -58,10 +58,11 @@ func (nexus *FileNexus) GetEntry(conn *net.UDPConn, remoteAddr, filename string)
 	if _, ok := nexus.entries[key]; ok {
 		success = true
 	} else {
-		err := nexus.loadBytes(key, filename)
+		err := nexus.loadBytes(key, filename, false)
 		if err != nil {
 			doSendError(conn, ErrorFileNotFound, err.Error())
 			conn.Close()
+			return false, nil
 		}
 		success = true
 	}
@@ -99,11 +100,13 @@ func (nexus *FileNexus) saveBytes(remoteAddr string, filename string) error {
 	return nil
 }
 
-func (nexus *FileNexus) loadBytes(key string, filename string) error {
+func (nexus *FileNexus) loadBytes(key string, filename string, obtainMutex bool) error {
 
 	// Obtain the Mutex and Lock out other ops against Hashmap
-	nexus.mapAccessMutex.Lock()
-	defer nexus.mapAccessMutex.Unlock()
+	if obtainMutex {
+		nexus.mapAccessMutex.Lock()
+		defer nexus.mapAccessMutex.Unlock()
+	}
 
 	if fileExists(filename) {
 
