@@ -1,5 +1,7 @@
 *.cmd
 dist/
+README.md.orig*
+README.md.toc*
 
 
 # Created by https://www.gitignore.io/api/go

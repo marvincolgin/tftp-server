@@ -10,6 +10,21 @@ https://www.linkedin.com/in/mcolgin
 https://marvincolgin.com
 ```
 
+<!--ts-->
+   * [TFTP Server](#tftp-server)
+      * [Scope](#scope)
+      * [Limitations](#limitations)
+      * [Building](#building)
+      * [Parameters](#parameters)
+      * [Sample Execution](#sample-execution)
+      * [Testing](#testing)
+         * [Unit Test](#unit-test)
+         * [Integration Test](#integration-test)
+      * [Scripting](#scripting)
+
+<!-- Added by: mmc, at: Wed Oct 30 21:46:55 PDT 2019 -->
+
+<!--te-->
 
 ## Scope
 
@@ -92,3 +107,13 @@ ae2797df6804b7653d697f9a869e4007  test-even.dat
 ae2797df6804b7653d697f9a869e4007  test-even.dat
 37d0ee31bb8827f75c1c69dca888d83c  test-odd.dat
 ```
+
+## Scripting
+
+This software supports exit-codes for errors resulting in abnormal execution:
+
+| Code | Desc |
+| ---- | ---- |
+| 0    | No Error |
+| 1    | Listener Error: IP |
+| 2    | Listener Error: Port |
