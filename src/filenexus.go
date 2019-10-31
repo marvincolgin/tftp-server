@@ -10,26 +10,26 @@ import (
 // FileEntry to contain raw-bytes for file and concurency Mutex
 type FileEntry struct {
 	Bytes []byte
-	Mutex *sync.RWMutex
 }
 
 // NewFileEntry creates the struct
 func NewFileEntry() *FileEntry {
 	entry := FileEntry{}
 	entry.Bytes = nil
-	entry.Mutex = new(sync.RWMutex)
 	return &entry
 }
 
 // FileNexus is a hash-map, indexed by filename
 type FileNexus struct {
-	entries map[string]*FileEntry
+	entries        map[string]*FileEntry
+	mapAccessMutex *sync.RWMutex
 }
 
 // NewFileNexus create a new instance of the struct
 func NewFileNexus() *FileNexus {
 	return &FileNexus{
-		entries: make(map[string]*FileEntry),
+		entries:        make(map[string]*FileEntry),
+		mapAccessMutex: new(sync.RWMutex),
 	}
 }
 
@@ -47,44 +47,24 @@ func (nexus *FileNexus) GetEntry(conn *net.UDPConn, remoteAddr, filename string)
 	// .. so we are going to key our hashmap with Client+Filename
 
 	success := false
+
+	// Obtain the Mutex and Lock out other ops against Hashmap
+	nexus.mapAccessMutex.Lock()
+	defer nexus.mapAccessMutex.Unlock()
+
 	key := nexus.makeHashKey(remoteAddr, filename)
 
 	// Is FILE loaded?
 	if _, ok := nexus.entries[key]; ok {
-
 		success = true
-
 	} else {
-
-		if fileExists(filename) {
-
-			// Attempt to Load the FILE
-			data, err := ioutil.ReadFile(filename)
-			if err == nil {
-
-				// Perform Load
-				nexus.entries[key] = NewFileEntry()
-				nexus.entries[key].Bytes = make([]byte, len(data))
-				copy(nexus.entries[key].Bytes, data)
-
-				success = true
-
-			} else {
-
-				// ERROR: unable to load
-				errmsg := fmt.Sprintf("ERROR: unable to ReadFile()::Error():[%s] filename:[%s]", err.Error(), filename)
-				fmt.Printf("%s\n", errmsg)
-				doSendError(conn, ErrorFileNotFound, errmsg)
-				conn.Close()
-
-			}
-
-		} else { // WRQ: New File to be Created
-
-			nexus.entries[key] = NewFileEntry()
-			nexus.entries[key].Bytes = nil // Officially, nil is correct vs 'make([]byte, 0)'
-			success = true
+		err := nexus.loadBytes(key, filename, false)
+		if err != nil {
+			doSendError(conn, ErrorFileNotFound, err.Error())
+			conn.Close()
+			return false, nil
 		}
+		success = true
 	}
 
 	var entry *FileEntry = nil
@@ -98,12 +78,12 @@ func (nexus *FileNexus) GetEntry(conn *net.UDPConn, remoteAddr, filename string)
 
 func (nexus *FileNexus) saveBytes(remoteAddr string, filename string) error {
 
+	// Obtain the Mutex and Lock out other ops against Hashmap
+	nexus.mapAccessMutex.Lock()
+	defer nexus.mapAccessMutex.Unlock()
+
 	// Get the Key to the HashMap for entry
 	key := nexus.makeHashKey(remoteAddr, filename)
-
-	// Acquire Mutex and agree to release at end of func()
-	nexus.entries[key].Mutex.Lock()
-	defer nexus.entries[key].Mutex.Unlock()
 
 	// Perform write to file
 	if fileEntry, ok := nexus.entries[key]; ok {
@@ -120,12 +100,38 @@ func (nexus *FileNexus) saveBytes(remoteAddr string, filename string) error {
 	return nil
 }
 
-func (nexus *FileNexus) loadBytes(filename string, rawbytes []byte) []byte {
+func (nexus *FileNexus) loadBytes(key string, filename string, obtainMutex bool) error {
 
-	// Acquire (READ-ONLY) Mutext and agree to release
-	nexus.entries[filename].Mutex.RLock()
-	defer nexus.entries[filename].Mutex.RUnlock()
+	// Obtain the Mutex and Lock out other ops against Hashmap
+	if obtainMutex {
+		nexus.mapAccessMutex.Lock()
+		defer nexus.mapAccessMutex.Unlock()
+	}
 
-	// Load the files
-	return nexus.entries[filename].Bytes
+	if fileExists(filename) {
+
+		// Attempt to Load the FILE
+		data, err := ioutil.ReadFile(filename)
+		if err == nil {
+
+			// Perform Load
+			nexus.entries[key] = NewFileEntry()
+			nexus.entries[key].Bytes = make([]byte, len(data))
+			copy(nexus.entries[key].Bytes, data)
+
+		} else {
+
+			// ERROR: unable to load
+			return fmt.Errorf("ERROR: unable to ReadFile()::Error():[%s] filename:[%s]", err.Error(), filename)
+
+		}
+
+	} else { // WRQ: New File to be Created
+
+		nexus.entries[key] = NewFileEntry()
+		nexus.entries[key].Bytes = nil // Officially, nil is correct vs 'make([]byte, 0)'
+
+	}
+
+	return nil
 }
