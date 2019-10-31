@@ -175,9 +175,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 	var curBlock uint16 = 1
 	var curPos int = 0
 
-	for curPos < len(entry.Bytes) {
-
-		// *** @TODO ZERO BYTE WILL SIGNAL END
+	for curPos <= len(entry.Bytes) {
 
 		// Set the PacketSize with bounds to the end of file
 		packetSize := MaxDataBlockSize
@@ -185,7 +183,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 			packetSize = len(entry.Bytes) - curPos
 		}
 
-		// fmt.Fprint(os.Stdout, "READ: STATUS curPos:[%d] curBlock:[%d] len(entry.Bytes):[%d] packetSize:[%d]\n", curPos, curBlock, len(entry.Bytes), packetSize)
+		// fmt.Fprintf(os.Stdout, "READ: STATUS curPos:[%d] curBlock:[%d] packetSize:[%d] len(entry.Bytes):[%d]\n", curPos, curBlock, packetSize, len(entry.Bytes))
 
 		// Send the Data Packet
 		dataPacket := makePacketData(curBlock, entry.Bytes, curPos, packetSize)
@@ -194,7 +192,14 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.WriteToUDP()::remoteAddr:[%s]", err.Error(), remoteAddr.String())
 			doSendError(conn, ErrorNotDefined, errmsg)
 			conn.Close() // @TODO: Should I really do this?!?
+			fmt.Println("*** RETURN")
 			return
+		}
+
+		// End of the Line! We just sent a ZERO byte packet, so that's the end of the transfer and we exit
+		// NOTE: We did this, cuz "for curPos <= len(entry.Bytes)", which got us here
+		if curPos == len(entry.Bytes) {
+			break
 		}
 
 		// WAIT for our ACK packet
@@ -204,6 +209,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 				errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.Read()::readRemoteAdrr:[%s]\n", err.Error(), readRemoteAddr)
 				doSendError(conn, ErrorNotDefined, errmsg)
 				// conn.Close() I should *NOT* do this, as it's an error packet, wait for retry
+				fmt.Println("*** RETURN")
 				return
 			}
 
@@ -212,6 +218,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 				errmsg := fmt.Sprintf("ERROR: doReadReq()::remoteAddr.Port:[%d] != readRemoteAddr.Port:[%d] ", remoteAddr.Port, readRemoteAddr.Port)
 				doSendError(conn, ErrorUnknownTID, errmsg)
 				// conn.Close() I should *NOT* do this, it's not a reason to disconnect, it's just a bogus packet
+				fmt.Println("*** RETURN")
 				continue
 			}
 
@@ -224,6 +231,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		if err != nil {
 			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::AckPacket.Parse()", err.Error())
 			doSendError(conn, ErrorNotDefined, errmsg) // ?? @TODO Is this an OP error?
+			fmt.Println("*** RETURN")
 			return
 		}
 		// Set current block to be the ackPacket's blocknum (as it could have incremented this value in resends of Ack)
@@ -289,8 +297,8 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 
 			// 4 Bytes is the official END (as it's a data packet with no DATA).. otherwise, it is an error
 			if cntReadActual != 4 {
-				// @TODO: Are these last bytes getting to the file?!?!?
-				fmt.Fprintf(os.Stderr, "ERROR: doWriteReq()::Incomplete Packet.cntRead:[%d]\n", cntReadActual)
+				// I thought this was an issue, but it doesn't appear to be.. wasn't sure these last bytes were getting there
+				// fmt.Fprintf(os.Stderr, "DEBUG: doWriteReq()::cntReadActual:[%d]\n", cntReadActual)
 			} else {
 				// Normal
 				// fmt.Fprintf(os.Stdout, "WRITE: Got Short Packet, 4 bytes.\n")
