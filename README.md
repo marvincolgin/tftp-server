@@ -73,6 +73,17 @@ READ: SUCCESS file:[test-odd.dat], client:[127.0.0.1:61075]
 
 ## Testing
 
+### Unit Test
 ```
 go test
+```
+
+### Integration Test
+
+The following scripts will great two large files, one with a filesize that is even 512 blocks, the other is not. Compare the two MD5 hashs to confirm that the same file generated locally, sent to the tftp-server, then pulled back down is the same.
+
+```
+cd test
+./test-put.sh
+./test-get.sh
 ```
