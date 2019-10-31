@@ -12,17 +12,17 @@ func SetupListener(serverIPPort string) *net.UDPConn {
 
 	addr, err := net.ResolveUDPAddr("udp", serverIPPort)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: ResolveUDPAddr()::serverIPPort:[%s]\n", serverIPPort)
+		fmt.Fprintf(os.Stderr, "ERROR: ResolveUDPAddr()::serverIPPort:[%s]::err.Error():[%s]\n", serverIPPort, err.Error())
 		os.Exit(1)
 	}
 
 	conn, err := net.ListenUDP("udp", addr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: ListenUDP()::addr:[%s]\n", addr)
+		fmt.Fprintf(os.Stderr, "ERROR: ListenUDP()::addr:[%s]::err.Error():[%s]\n", addr, err.Error())
 		os.Exit(2)
 	}
 
-	fmt.Fprintln(os.Stdout, "Listener: "+serverIPPort)
+	fmt.Fprintf(os.Stdout, "Listener: %s\n", serverIPPort)
 
 	return conn
 }
@@ -72,12 +72,12 @@ func createUDPEndPoint(addr string, port int) (bool, *net.UDPAddr, *net.UDPConn)
 	// Establish Connection
 	localAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", addr, port))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ERROR: resolveUDPAddr(). Dumping Packet")
+		fmt.Fprintf(os.Stderr, "ERROR: resolveUDPAddr()::err.Error():[%s]\n", err.Error())
 		return false, nil, nil
 	}
 	conn, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ERROR: listenUDP(). Dumping Packet")
+		fmt.Fprintf(os.Stderr, "ERROR: listenUDP()::err.Error():[%s]\n", err.Error())
 		return false, localAddr, nil
 	}
 
@@ -100,22 +100,22 @@ func processProtocol(nexus *FileNexus, dataChannel chan RawPacket, timeout int) 
 		// get raw bytes from packet
 		rawRequestBuffer := rawPacket.getBytes()
 
-		opcode, p, _ := ParsePacket(rawRequestBuffer) // @TODO discarded err
-		switch opcode {
-		case OpRRQ:
-			// @TODO re-evaluate this..., do I need makePacketRequest, can I use wire.go?
-			packetReq := makePacketRequest(p.Serialize())
-			doReadReq(nexus, conn, rawPacket.Addr, packetReq)
-		case OpWRQ:
-			// @TODO re-evaluate this..., do I need makePacketRequest, can I use wire.go?
-			packetReq := makePacketRequest(p.Serialize())
-			doWriteReq(nexus, conn, rawPacket.Addr, packetReq)
-		case OpData:
-			fmt.Fprintf(os.Stdout, "OpData\n")
-		case OpAck:
-			fmt.Fprintf(os.Stdout, "OpAck\n")
-		case OpError:
-			fmt.Fprintf(os.Stdout, "OpError\n")
+		opcode, p, err := ParsePacket(rawRequestBuffer) // @TODO discarded err
+		if err == nil {
+			switch opcode {
+			case OpRRQ:
+				// @TODO re-evaluate this..., do I need makePacketRequest, can I use wire.go?
+				packetReq := makePacketRequest(p.Serialize())
+				doReadReq(nexus, conn, rawPacket.Addr, packetReq)
+			case OpWRQ:
+				// @TODO re-evaluate this..., do I need makePacketRequest, can I use wire.go?
+				packetReq := makePacketRequest(p.Serialize())
+				doWriteReq(nexus, conn, rawPacket.Addr, packetReq)
+			default:
+				fmt.Fprintf(os.Stderr, "processProtocol()::Invalid Opcode::opcode:[%d]", opcode)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "processProtocol()::ParsePacket()::err.Error():[%s]\n", err.Error())
 		}
 
 		// Close the connection as we are done processing the packet
@@ -192,7 +192,6 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.WriteToUDP()::remoteAddr:[%s]", err.Error(), remoteAddr.String())
 			doSendError(conn, ErrorNotDefined, errmsg)
 			conn.Close() // @TODO: Should I really do this?!?
-			fmt.Println("*** RETURN")
 			return
 		}
 
@@ -209,7 +208,6 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 				errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.Read()::readRemoteAdrr:[%s]\n", err.Error(), readRemoteAddr)
 				doSendError(conn, ErrorNotDefined, errmsg)
 				// conn.Close() I should *NOT* do this, as it's an error packet, wait for retry
-				fmt.Println("*** RETURN")
 				return
 			}
 
@@ -218,7 +216,6 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 				errmsg := fmt.Sprintf("ERROR: doReadReq()::remoteAddr.Port:[%d] != readRemoteAddr.Port:[%d] ", remoteAddr.Port, readRemoteAddr.Port)
 				doSendError(conn, ErrorUnknownTID, errmsg)
 				// conn.Close() I should *NOT* do this, it's not a reason to disconnect, it's just a bogus packet
-				fmt.Println("*** RETURN")
 				continue
 			}
 
@@ -231,7 +228,6 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		if err != nil {
 			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::AckPacket.Parse()", err.Error())
 			doSendError(conn, ErrorNotDefined, errmsg) // ?? @TODO Is this an OP error?
-			fmt.Println("*** RETURN")
 			return
 		}
 		// Set current block to be the ackPacket's blocknum (as it could have incremented this value in resends of Ack)
@@ -310,6 +306,8 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 		var clientAddr *net.UDPAddr
 
 		for {
+
+			// READ off UDP connection
 			cntReadFromUDP, clientAddr, err = conn.ReadFromUDP(rcvBuf)
 			if err != nil {
 				errmsg := fmt.Sprintf("ERROR: doWriteReq()::conn.ReadFromUDP()::remoteAddr:[%s]::err.Error():[%s]\n", remoteAddr, err.Error())
@@ -318,8 +316,7 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 			}
 
 			if clientAddr.Port != remoteAddr.Port {
-				// Packet from unknown host
-				errmsg := fmt.Sprintf("ERROR: doWriteReq()::Received packet from unknown host: " + clientAddr.String())
+				errmsg := fmt.Sprintf("ERROR: doWriteReq()::clientAddr.Port!=remoteAddr.Port::clientAddr.Port:[%d]::remoteAddr.Port:[%d]\n", clientAddr.Port, remoteAddr.Port)
 				doSendError(conn, ErrorUnknownTID, errmsg)
 				continue
 			}
