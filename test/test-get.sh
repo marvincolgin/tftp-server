@@ -1,13 +1,15 @@
-rm -f get.out
-echo "binary" >> get.out
-echo "get test-even.dat" >> get.out
-echo "get test-odd.dat" >> get.out
-echo "quit" >> get.out
-cat get.out | tftp 127.0.0.1  > /dev/null
+UNIQID=$1
+
+rm -f get-$UNIQID.out
+echo "binary" > get-$UNIQID.out
+echo "get test-even-$UNIQID.dat" >> get-$UNIQID.out
+echo "get test-odd-$UNIQID.dat" >> get-$UNIQID.out
+echo "quit" >> get-$UNIQID.out
+cat get-$UNIQID.out | tftp 127.0.0.1  > /dev/null
 
 
-md5sum test-even.dat
-md5sum test-odd.dat
+md5sum test-even-$UNIQID.dat > get-md5sum-$UNIQID.out
+md5sum test-odd-$UNIQID.dat >> get-md5sum-$UNIQID.out
 
-rm -f test-even.dat test-odd.dat get.out
+rm -f test-even-$UNIQID.dat test-odd-$UNIQID.dat get-$UNIQID.out
 
