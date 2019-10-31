@@ -27,7 +27,7 @@ go get github.com/pborman/getopt
 go build -o <path to resulting binary>
 ```
 
-## Parameters / Usage
+## Parameters
 
 Parameters follow posix standards using the Google [getopt](https://godoc.org/github.com/pborman/getopt) go package.
 
@@ -56,6 +56,19 @@ tftp --ip 192.168.0.1 --port 6969
 Restrict Listener to 4 threads
 ```
 tftp --threads 4
+```
+
+## Sample Execution
+```
+~$ tftp
+
+Listener: 127.0.0.1:69
+Threads: 16 Starting...Done
+Listener: Loop Running
+READ: REQUEST file:[test-even.dat], client:[127.0.0.1:61073]
+READ: SUCCESS file:[test-even.dat], client:[127.0.0.1:61073]
+READ: REQUEST file:[test-odd.dat], client:[127.0.0.1:61075]
+READ: SUCCESS file:[test-odd.dat], client:[127.0.0.1:61075]
 ```
 
 ## Testing
