@@ -6,7 +6,6 @@ dd if=/dev/random of=./test-odd.dat bs=511 count=1000 2> /dev/null
 
 rm -f put.out
 echo "binary" >> put.out
- >> put.out
 echo "put test-even.dat" >> put.out
 echo "put test-odd.dat" >> put.out
 echo "quit" >> put.out
