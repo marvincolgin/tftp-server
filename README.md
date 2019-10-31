@@ -13,6 +13,7 @@ https://marvincolgin.com
 <!--ts-->
    * [TFTP Server](#tftp-server)
       * [Scope](#scope)
+      * [TODO](#todo)
       * [Limitations](#limitations)
       * [Building](#building)
       * [Parameters](#parameters)
@@ -20,9 +21,10 @@ https://marvincolgin.com
       * [Testing](#testing)
          * [Unit Test](#unit-test)
          * [Integration Test](#integration-test)
+         * [Concurrency Testing](#concurrency-testing)
       * [Scripting](#scripting)
 
-<!-- Added by: mmc, at: Wed Oct 30 21:46:55 PDT 2019 -->
+<!-- Added by: mmc, at: Thu Oct 31 15:43:03 PDT 2019 -->
 
 <!--te-->
 
@@ -109,7 +111,24 @@ go test
 
 The following scripts will great two large files, one with a filesize that is even 512 blocks, the other is not. Compare the two MD5 hashs to confirm that the same file generated locally, sent to the tftp-server, then pulled back down is the same.
 
-*Test Concurrent*
+*Test Single*
+
+_Parameters_
+```
+~$ ./test-entrypoint.sh <uniqe-id, required> <filesize, default 100000>
+```
+
+_Example_
+```
+~$ cd test
+~$ ./test-entrypoint.sh 1 100000
+
+OK #1: Perfect Match
+```
+
+### Concurrency Testing
+
+This testing script will spawn off X number of calls to "./test-entrypoint.sh"
 
 _Parameters_
 ```
@@ -133,20 +152,7 @@ OK #4: Perfect Match
 OK #5: Perfect Match
 ```
 
-*Test Single*
 
-_Parameters_
-```
-~$ ./test-entrypoint.sh <uniqe-id, required> <filesize, default 100000>
-```
-
-_Example_
-```
-~$ cd test
-~$ ./test-exec.sh 1 100000
-
-OK #1: Perfect Match
-```
 
 ## Scripting
 
