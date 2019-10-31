@@ -30,6 +30,17 @@ https://marvincolgin.com
 
 TFTP Server, written in Go, following the [RFC-1370](https://tools.ietf.org/html/rfc1350) specification.
 
+## TODO
+
+There are several features that I'd like to continue building:
+
+* Expire a Loaded File with TTL
+* Implement Timeouts
+* Tests with Lots of Clients
+* Date/Time Stamps to Messages
+* Progress Indicators for Each Thread like NPM (Pie-in-the-Sky)
+* Speed-Up in allocation of byte buffers on WRITE
+
 ## Limitations
 
 * Does not support later RFC specifications
@@ -98,15 +109,43 @@ go test
 
 The following scripts will great two large files, one with a filesize that is even 512 blocks, the other is not. Compare the two MD5 hashs to confirm that the same file generated locally, sent to the tftp-server, then pulled back down is the same.
 
-*Example*
-```
-cd test
-./test.sh
+*Test Concurrent*
 
-ae2797df6804b7653d697f9a869e4007  test-even.dat
-37d0ee31bb8827f75c1c69dca888d83c  test-odd.dat
-ae2797df6804b7653d697f9a869e4007  test-even.dat
-37d0ee31bb8827f75c1c69dca888d83c  test-odd.dat
+_Parameters_
+```
+./test.sh <# of concurrent clients>
+```
+
+_Example_
+```
+~$ cd test
+~$ ./test.sh 5
+Spawning 1
+Spawning 2
+Spawning 3
+Spawning 4
+Spawning 5
+
+OK #1: Perfect Match
+OK #2: Perfect Match
+OK #3: Perfect Match
+OK #4: Perfect Match
+OK #5: Perfect Match
+```
+
+*Test Single*
+
+_Parameters_
+```
+~$ ./test-entrypoint.sh <uniqe-id, required> <filesize, default 100000>
+```
+
+_Example_
+```
+~$ cd test
+~$ ./test-exec.sh 1 100000
+
+OK #1: Perfect Match
 ```
 
 ## Scripting
