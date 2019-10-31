@@ -1,8 +1,8 @@
 rm -f test-even.dat
 rm -f test-odd.dat
 
-dd if=/dev/random of=./test-even.dat bs=512 count=1000 2> /dev/null
-dd if=/dev/random of=./test-odd.dat bs=511 count=1000 2> /dev/null
+dd if=/dev/random of=./test-even.dat bs=512 count=100000 2> /dev/null
+dd if=/dev/random of=./test-odd.dat bs=511 count=100000 2> /dev/null
 
 rm -f put.out
 echo "binary" >> put.out
