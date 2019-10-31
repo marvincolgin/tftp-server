@@ -183,7 +183,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 			packetSize = len(entry.Bytes) - curPos
 		}
 
-		// fmt.Fprintf(os.Stdout, "READ: STATUS curPos:[%d] curBlock:[%d] packetSize:[%d] len(entry.Bytes):[%d]\n", curPos, curBlock, packetSize, len(entry.Bytes))
+		// fmt.Fprintf(os.Stdout, "DEBUG::READ: STATUS curPos:[%d] curBlock:[%d] packetSize:[%d] len(entry.Bytes):[%d]\n", curPos, curBlock, packetSize, len(entry.Bytes))
 
 		// Send the Data Packet
 		dataPacket := makePacketData(curBlock, entry.Bytes, curPos, packetSize)
@@ -191,7 +191,6 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		if err != nil {
 			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.WriteToUDP()::remoteAddr:[%s]", err.Error(), remoteAddr.String())
 			doSendError(conn, ErrorNotDefined, errmsg)
-			conn.Close() // @TODO: Should I really do this?!?
 			return
 		}
 
@@ -201,35 +200,31 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 			break
 		}
 
-		// WAIT for our ACK packet
+		// Perform our READs until GOOD packet
 		for {
 			_, readRemoteAddr, err := conn.ReadFromUDP(ackBuffer)
+
 			if err != nil {
 				errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::conn.Read()::readRemoteAdrr:[%s]\n", err.Error(), readRemoteAddr)
 				doSendError(conn, ErrorNotDefined, errmsg)
-				// conn.Close() I should *NOT* do this, as it's an error packet, wait for retry
 				return
 			}
-
 			if readRemoteAddr.Port != remoteAddr.Port {
-				// Packet from unknown host
 				errmsg := fmt.Sprintf("ERROR: doReadReq()::remoteAddr.Port:[%d] != readRemoteAddr.Port:[%d] ", remoteAddr.Port, readRemoteAddr.Port)
 				doSendError(conn, ErrorUnknownTID, errmsg)
-				// conn.Close() I should *NOT* do this, it's not a reason to disconnect, it's just a bogus packet
 				continue
 			}
-
-			// We got our ACK, if we are here...
 			break
 		}
 
-		// Parse the ACK Packet
+		// TEST for VALID Packet
 		err = ackPacket.Parse(ackBuffer)
 		if err != nil {
 			errmsg := fmt.Sprintf("ERROR:[%s] doReadReq()::AckPacket.Parse()", err.Error())
 			doSendError(conn, ErrorNotDefined, errmsg) // ?? @TODO Is this an OP error?
 			return
 		}
+
 		// Set current block to be the ackPacket's blocknum (as it could have incremented this value in resends of Ack)
 		curBlock = ackPacket.BlockNum + 1
 
@@ -275,7 +270,8 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 	// First Block will be zero (0) in response to REQ
 	var curBlock uint16 = 0
 
-	cntReadActual := MaxDataBlockSize + 4 // 4 bytes is BlockNum?
+	// Prime the ~~Pump~~loop  .. flow 1st time like subsequent times
+	cntReadActual := MaxDataBlockSize + 4 // 4 Bytes is BlockNum/OpMode
 
 	for {
 
@@ -288,33 +284,27 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 			return
 		}
 
-		// Short Packet, most likely the END
+		/*
+			End-of-the-Line...
+			cntReadActual is primed before loop-start, it is actually set at bottom
+			if this condition happens, then the last packet was received, since it
+			was less than 512b payload + 4b header
+		*/
 		if cntReadActual < MaxDataBlockSize+4 {
-
-			// 4 Bytes is the official END (as it's a data packet with no DATA).. otherwise, it is an error
-			if cntReadActual != 4 {
-				// I thought this was an issue, but it doesn't appear to be.. wasn't sure these last bytes were getting there
-				// fmt.Fprintf(os.Stderr, "DEBUG: doWriteReq()::cntReadActual:[%d]\n", cntReadActual)
-			} else {
-				// Normal
-				// fmt.Fprintf(os.Stdout, "WRITE: Got Short Packet, 4 bytes.\n")
-			}
 			break
 		}
 
+		// Perform our READs until GOOD packet
 		var cntReadFromUDP int = 0
 		var clientAddr *net.UDPAddr
-
 		for {
-
-			// READ off UDP connection
 			cntReadFromUDP, clientAddr, err = conn.ReadFromUDP(rcvBuf)
+
 			if err != nil {
 				errmsg := fmt.Sprintf("ERROR: doWriteReq()::conn.ReadFromUDP()::remoteAddr:[%s]::err.Error():[%s]\n", remoteAddr, err.Error())
 				doSendError(conn, ErrorNotDefined, errmsg)
 				return
 			}
-
 			if clientAddr.Port != remoteAddr.Port {
 				errmsg := fmt.Sprintf("ERROR: doWriteReq()::clientAddr.Port!=remoteAddr.Port::clientAddr.Port:[%d]::remoteAddr.Port:[%d]\n", clientAddr.Port, remoteAddr.Port)
 				doSendError(conn, ErrorUnknownTID, errmsg)
@@ -323,6 +313,7 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 			break
 		}
 
+		// TEST for VALID Packet
 		err = packetData.Parse(rcvBuf)
 		if err != nil {
 			errmsg := fmt.Sprintf("ERROR: doWriteReq()::PacketData.Parse()::err.Error():[%s]", err.Error())
@@ -330,7 +321,7 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 			return
 		}
 
-		// fmt.Fprintf(os.Stdout, "WRITE: STATUS curBlock:[%d] len(entry.Bytes):[%d] cntReadFromUDP:[%d]\n", curBlock, len(entry.Bytes), cntReadFromUDP)
+		// fmt.Fprintf(os.Stdout, "DEBUG::WRITE: STATUS curBlock:[%d] len(entry.Bytes):[%d] cntReadFromUDP:[%d]\n", curBlock, len(entry.Bytes), cntReadFromUDP)
 
 		// Out of order, as this isn't the next seq block req. As a result, we will loop and re-ack what we want
 		if packetData.BlockNum-1 != curBlock {
