@@ -169,13 +169,13 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 
 	// Create ACK Packet (Reusable)
 	ackPacket := PacketAck{}
-	ackBuffer := make([]byte, 4) // ?? sizeof(PacketAck)
+	ackBuffer := make([]byte, 4)
 
 	// Loop through the entire file
 	var curBlock uint16 = 1
 	var curPos int = 0
 
-	for curPos <= len(entry.Bytes) {
+	for curPos < len(entry.Bytes) {
 
 		// *** @TODO ZERO BYTE WILL SIGNAL END
 
