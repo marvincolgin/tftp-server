@@ -18,4 +18,4 @@ cat put-$UNIQID.out | tftp 127.0.0.1 > /dev/null
 md5sum test-even-$UNIQID.dat > put-md5sum-$UNIQID.out
 md5sum test-odd-$UNIQID.dat >> put-md5sum-$UNIQID.out
 
-rm -f test-even.dat test-odd.dat put.out
+rm -f test-even-$UNIQID.dat test-odd-$UNIQID.dat put-$UNIQID.out

@@ -17,6 +17,7 @@ SIZE=${SIZE:="10000"}
 
 # echo "Comparison..."
 diff put-md5sum-$UNIQID.out get-md5sum-$UNIQID.out > final-$UNIQID.out
+rm put-md5sum-$UNIQID.out get-md5sum-$UNIQID.out
 filesize=$(wc -c "final-$UNIQID.out" | awk '{print $1}')
 if [ $filesize -ne 0 ]; then
     echo "ERROR #$UNIQID: MISMATCH MD5SUM!!!"

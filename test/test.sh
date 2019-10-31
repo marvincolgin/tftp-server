@@ -6,7 +6,6 @@ if [ -z "$1" ]
         exit 1
 fi
 NUMCLIENTS=$1
-echo $NUMCLIENTS
 
 for (( c=1; c<=$NUMCLIENTS; c++ ))
 do
