@@ -36,6 +36,7 @@ TFTP Server, written in Go, following the [RFC-1370](https://tools.ietf.org/html
 
 There are several features that I'd like to continue building:
 
+*_TEST: Incomplete Files should not Appear_*
 * Expire a Loaded File with TTL
 * Implement Timeouts
 * Tests with Lots of Clients

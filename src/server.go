@@ -270,6 +270,9 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 	// First Block will be zero (0) in response to REQ
 	var curBlock uint16 = 0
 
+	// Flag flipped when the final packet is received
+	var fileComplete bool = false
+
 	// Prime the ~~Pump~~loop  .. flow 1st time like subsequent times
 	cntReadActual := MaxDataBlockSize + 4 // 4 Bytes is BlockNum/OpMode
 
@@ -288,9 +291,11 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 			End-of-the-Line...
 			cntReadActual is primed before loop-start, it is actually set at bottom
 			if this condition happens, then the last packet was received, since it
-			was less than 512b payload + 4b header
+			was less than 512b payload + 4b header.. or a zero-byte packet which
+			contains only the 4-bytes for Op/Mode
 		*/
 		if cntReadActual < MaxDataBlockSize+4 {
+			fileComplete = true
 			break
 		}
 
@@ -341,10 +346,14 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 	}
 
 	// COMPLETE: Output and Save File
-	fmt.Fprintf(os.Stdout, "WRITE: SUCCESS file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
-	err := nexus.saveBytes(remoteAddr.String(), packet.Filename)
-	if err != nil {
-		fmt.Fprintf(os.Stdout, "WRITE: ERROR unable to save file:[%s]", packet.Filename)
+	if fileComplete {
+		fmt.Fprintf(os.Stdout, "WRITE: SUCCESS file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
+		err := nexus.saveBytes(remoteAddr.String(), packet.Filename)
+		if err != nil {
+			fmt.Fprintf(os.Stdout, "WRITE: ERROR unable to save file:[%s]", packet.Filename)
+		}
+	} else {
+		fmt.Fprintf(os.Stdout, "WRITE: INCOMPLETE! file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
 	}
 
 	// @TODO Nullify entry
