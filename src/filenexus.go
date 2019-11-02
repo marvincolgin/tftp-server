@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -35,11 +37,15 @@ func NewFileNexus() *FileNexus {
 
 // makeHashKey will create a index string based for accessing the Hashmap
 func (nexus *FileNexus) makeHashKey(remoteAddr string, filename string) string {
-	return fmt.Sprintf("%s$%s", remoteAddr, filename)
+	// @TODO: Evaluate this, I realized remoteAddr was IP:Port, not IP.. and nether
+	// seem good. So, I went with a simpe filename
+	// result := fmt.Sprintf("%s$%s", remoteAddr, filename)
+	result := filename
+	return result
 }
 
 // GetEntry will retrieve the Entry for a given filename/connection (filling the file data if not loaded)
-func (nexus *FileNexus) GetEntry(conn *net.UDPConn, remoteAddr, filename string) (bool, *FileEntry) {
+func (nexus *FileNexus) GetEntry(conn *net.UDPConn, remoteAddr, filename string) (*FileEntry, error) {
 	// since the spec denotes:
 	// "Requests should be handled concurrently, but files being written to the server must not be visible until completed"
 	// .. as a result, I'm taking this to mean that two clients can be using the file at the same time
@@ -62,7 +68,7 @@ func (nexus *FileNexus) GetEntry(conn *net.UDPConn, remoteAddr, filename string)
 		if err != nil {
 			doSendError(conn, ErrorFileNotFound, err.Error())
 			conn.Close()
-			return false, nil
+			return nil, fmt.Errorf("ErrorFileNotFound()::" + err.Error())
 		}
 		success = true
 	}
@@ -72,8 +78,7 @@ func (nexus *FileNexus) GetEntry(conn *net.UDPConn, remoteAddr, filename string)
 		entry = nexus.entries[key]
 	}
 
-	return success, entry
-
+	return entry, nil
 }
 
 func (nexus *FileNexus) saveBytes(remoteAddr string, filename string) error {
@@ -134,4 +139,22 @@ func (nexus *FileNexus) loadBytes(key string, filename string, obtainMutex bool)
 	}
 
 	return nil
+}
+
+func (nexus *FileNexus) md5sum(entry *FileEntry) (string, error) {
+
+	// Obtain the Mutex and Lock out other ops against Hashmap
+	// if obtainMutex {
+	nexus.mapAccessMutex.Lock()
+	defer nexus.mapAccessMutex.Unlock()
+	// }
+
+	if entry.Bytes == nil {
+		return "", fmt.Errorf("ERROR: md5sum()::entry.Bytes==nil")
+	}
+
+	hasher := md5.New()
+	hasher.Write(entry.Bytes)
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+
 }

@@ -49,8 +49,10 @@ func ListenAndServe(serverIPPort string, numThreads int, timeout int) {
 
 	// Forever Loop...Listening
 	fmt.Fprintf(os.Stdout, "Listener: Loop Running\n")
-	rcvBuf := make([]byte, MaxPacketSize)
 	for {
+
+		// Make a new Buffer Each time, I wasn't, but I got weird concurrent issues
+		rcvBuf := make([]byte, MaxPacketSize)
 
 		// Blocking read from Listener
 		cnt, remoteAddr, _ := conn.ReadFromUDP(rcvBuf)
@@ -154,8 +156,9 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 	}
 
 	// Load the File into Nexus
-	ok, entry := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
-	if !ok {
+	entry, err := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: doWriteReq()::GetEntry()::remoteAddr.String():[%s]::packet.Filename:[%s] err.Error():[%s]", remoteAddr.String(), packet.Filename, err.Error())
 		return
 	}
 
@@ -167,15 +170,20 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		return
 	}
 
+	// Indicator for Success
+	var fileComplete bool = false
+
 	// Create ACK Packet (Reusable)
 	ackPacket := PacketAck{}
-	ackBuffer := make([]byte, 4)
 
 	// Loop through the entire file
 	var curBlock uint16 = 1
 	var curPos int = 0
 
 	for curPos <= len(entry.Bytes) {
+
+		// Make a new Buffer Each time, I wasn't, but I got weird concurrent issues
+		ackBuffer := make([]byte, 4)
 
 		// Set the PacketSize with bounds to the end of file
 		packetSize := MaxDataBlockSize
@@ -197,6 +205,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		// End of the Line! We just sent a ZERO byte packet, so that's the end of the transfer and we exit
 		// NOTE: We did this, cuz "for curPos <= len(entry.Bytes)", which got us here
 		if curPos == len(entry.Bytes) {
+			fileComplete = true
 			break
 		}
 
@@ -231,6 +240,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		// Advance our position in the file
 		if packetSize == 0 {
 			// this last packet was a terminating packet, as it's is 0 bytes and it just so happens
+			fileComplete = true
 			break
 		} else {
 			curPos = curPos + packetSize
@@ -238,7 +248,18 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 
 	}
 
-	fmt.Fprintf(os.Stdout, "READ: SUCCESS file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
+	// Useful debugging
+	md5, err := nexus.md5sum(entry)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "WRITE: Unable to md5sum()::err.Error():[%s]", err.Error())
+	}
+	fmt.Fprintf(os.Stdout, "DEBUG: READ:%s %s\n", md5, packet.Filename)
+
+	if fileComplete {
+		fmt.Fprintf(os.Stdout, "READ: SUCCESS file:[%s], client:[%s] md5:[%s]\n", packet.Filename, remoteAddr.String(), md5)
+	} else {
+		fmt.Fprintf(os.Stdout, "READ: INCOMPLETE! file:[%s], bytes:[%d], client:[%s] md5:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String(), md5)
+	}
 }
 
 // doWriteReq will process the incoming request packet and continue until file req processed
@@ -252,8 +273,9 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 	}
 
 	// Load the File into Nexus
-	ok, entry := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
-	if !ok {
+	entry, err := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: doWriteReq()::GetEntry()::remoteAddr.String():[%s]::packet.Filename:[%s] err.Error():[%s]", remoteAddr.String(), packet.Filename, err.Error())
 		return
 	}
 
@@ -265,10 +287,12 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 	// Create ACK Packet (Reusable)
 	ackPacket := PacketAck{}
 	packetData := PacketData{}
-	rcvBuf := make([]byte, MaxPacketSize) // Data comes in as 2048 packets
 
 	// First Block will be zero (0) in response to REQ
 	var curBlock uint16 = 0
+
+	// Flag flipped when the final packet is received
+	var fileComplete bool = false
 
 	// Prime the ~~Pump~~loop  .. flow 1st time like subsequent times
 	cntReadActual := MaxDataBlockSize + 4 // 4 Bytes is BlockNum/OpMode
@@ -288,15 +312,18 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 			End-of-the-Line...
 			cntReadActual is primed before loop-start, it is actually set at bottom
 			if this condition happens, then the last packet was received, since it
-			was less than 512b payload + 4b header
+			was less than 512b payload + 4b header.. or a zero-byte packet which
+			contains only the 4-bytes for Op/Mode
 		*/
 		if cntReadActual < MaxDataBlockSize+4 {
+			fileComplete = true
 			break
 		}
 
 		// Perform our READs until GOOD packet
 		var cntReadFromUDP int = 0
 		var clientAddr *net.UDPAddr
+		rcvBuf := make([]byte, MaxPacketSize) // Data comes in as 2048 packets .. moved down here, as it was getting weird concurrency issues
 		for {
 			cntReadFromUDP, clientAddr, err = conn.ReadFromUDP(rcvBuf)
 
@@ -341,10 +368,23 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 	}
 
 	// COMPLETE: Output and Save File
-	fmt.Fprintf(os.Stdout, "WRITE: SUCCESS file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
-	err := nexus.saveBytes(remoteAddr.String(), packet.Filename)
-	if err != nil {
-		fmt.Fprintf(os.Stdout, "WRITE: ERROR unable to save file:[%s]", packet.Filename)
+	if fileComplete {
+
+		// Useful debugging
+		md5, err := nexus.md5sum(entry)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "WRITE: Unable to md5sum()::err.Error():[%s]", err.Error())
+		}
+		fmt.Fprintf(os.Stdout, "DEBUG: READ:%s %s\n", md5, packet.Filename)
+
+		fmt.Fprintf(os.Stdout, "WRITE: SUCCESS file:[%s], bytes:[%d], client:[%s] md5:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String(), md5)
+		err = nexus.saveBytes(remoteAddr.String(), packet.Filename)
+		if err != nil {
+			fmt.Fprintf(os.Stdout, "WRITE: ERROR unable to save file:[%s]", packet.Filename)
+		}
+
+	} else {
+		fmt.Fprintf(os.Stdout, "WRITE: INCOMPLETE! file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
 	}
 
 	// @TODO Nullify entry

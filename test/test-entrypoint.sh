@@ -10,20 +10,26 @@ UNIQID=$1
 SIZE=$2
 SIZE=${SIZE:="10000"}
 
+ONLYPUT=0
+
 # echo "Testing..."
 ./test-put.sh $UNIQID $SIZE
-./test-get.sh $UNIQID
 
+if [ $ONLYPUT -ne 1 ]
+    then
+        ./test-get.sh $UNIQID
 
-# echo "Comparison..."
-diff put-md5sum-$UNIQID.out get-md5sum-$UNIQID.out > final-$UNIQID.out
-rm put-md5sum-$UNIQID.out get-md5sum-$UNIQID.out
-filesize=$(wc -c "final-$UNIQID.out" | awk '{print $1}')
-if [ $filesize -ne 0 ]; then
-    echo "ERROR #$UNIQID: MISMATCH MD5SUM!!!"
-    cat final-$UNIQID.out
-else
-    echo "OK #$UNIQID: Perfect Match"
-    rm final-$UNIQID.out
+        # echo "Comparison..."
+        diff $UNIQID-put-md5sum.out $UNIQID-get-md5sum.out > $UNIQID-final.out
+        rm $UNIQID-put-md5sum.out $UNIQID-get-md5sum.out
+        filesize=$(wc -c "$UNIQID-final.out" | awk '{print $1}')
+        if [ $filesize -ne 0 ]; then
+            echo "ERROR #$UNIQID: MISMATCH MD5SUM!!!"
+            cat $UNIQID-final.out
+        else
+            echo "OK #$UNIQID: Perfect Match"
+            rm $UNIQID-final.out
+        fi
+    else
+        cat $UNIQID-put-md5sum.out
 fi
-
