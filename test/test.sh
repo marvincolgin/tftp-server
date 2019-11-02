@@ -14,11 +14,12 @@ if [ $NUMCLIENTS -eq 1 ]
     then
         ./test-entrypoint.sh $NUMCLIENTS $SIZE
     else
-        for (( c=1; c<=$NUMCLIENTS; c++ ))
+        for c in $(seq -f "%05g" 1 $NUMCLIENTS)
         do
             echo "Spawning $c"
             ./test-entrypoint.sh $c $SIZE &
 
         done
 fi
+
 
