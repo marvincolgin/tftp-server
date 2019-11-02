@@ -154,8 +154,9 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 	}
 
 	// Load the File into Nexus
-	ok, entry := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
-	if !ok {
+	entry, err := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: doWriteReq()::GetEntry()::remoteAddr.String():[%s]::packet.Filename:[%s] err.Error():[%s]", remoteAddr.String(), packet.Filename, err.Error())
 		return
 	}
 
@@ -166,6 +167,9 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		conn.Close()
 		return
 	}
+
+	// Indicator for Success
+	var fileComplete bool = false
 
 	// Create ACK Packet (Reusable)
 	ackPacket := PacketAck{}
@@ -197,6 +201,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		// End of the Line! We just sent a ZERO byte packet, so that's the end of the transfer and we exit
 		// NOTE: We did this, cuz "for curPos <= len(entry.Bytes)", which got us here
 		if curPos == len(entry.Bytes) {
+			fileComplete = true
 			break
 		}
 
@@ -231,6 +236,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 		// Advance our position in the file
 		if packetSize == 0 {
 			// this last packet was a terminating packet, as it's is 0 bytes and it just so happens
+			fileComplete = true
 			break
 		} else {
 			curPos = curPos + packetSize
@@ -238,7 +244,18 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 
 	}
 
-	fmt.Fprintf(os.Stdout, "READ: SUCCESS file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
+	// Useful debugging
+	md5, err := nexus.md5sum(entry)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "WRITE: Unable to md5sum()::err.Error():[%s]", err.Error())
+	}
+	fmt.Fprintf(os.Stdout, "DEBUG: READ:%s %s\n", md5, packet.Filename)
+
+	if fileComplete {
+		fmt.Fprintf(os.Stdout, "READ: SUCCESS file:[%s], client:[%s] md5:[%s]\n", packet.Filename, remoteAddr.String(), md5)
+	} else {
+		fmt.Fprintf(os.Stdout, "READ: INCOMPLETE! file:[%s], bytes:[%d], client:[%s] md5:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String(), md5)
+	}
 }
 
 // doWriteReq will process the incoming request packet and continue until file req processed
@@ -252,8 +269,9 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 	}
 
 	// Load the File into Nexus
-	ok, entry := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
-	if !ok {
+	entry, err := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: doWriteReq()::GetEntry()::remoteAddr.String():[%s]::packet.Filename:[%s] err.Error():[%s]", remoteAddr.String(), packet.Filename, err.Error())
 		return
 	}
 
@@ -347,11 +365,20 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 
 	// COMPLETE: Output and Save File
 	if fileComplete {
-		fmt.Fprintf(os.Stdout, "WRITE: SUCCESS file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
-		err := nexus.saveBytes(remoteAddr.String(), packet.Filename)
+
+		// Useful debugging
+		md5, err := nexus.md5sum(entry)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "WRITE: Unable to md5sum()::err.Error():[%s]", err.Error())
+		}
+		fmt.Fprintf(os.Stdout, "DEBUG: READ:%s %s\n", md5, packet.Filename)
+
+		fmt.Fprintf(os.Stdout, "WRITE: SUCCESS file:[%s], bytes:[%d], client:[%s] md5:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String(), md5)
+		err = nexus.saveBytes(remoteAddr.String(), packet.Filename)
 		if err != nil {
 			fmt.Fprintf(os.Stdout, "WRITE: ERROR unable to save file:[%s]", packet.Filename)
 		}
+
 	} else {
 		fmt.Fprintf(os.Stdout, "WRITE: INCOMPLETE! file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
 	}
