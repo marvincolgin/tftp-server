@@ -49,8 +49,10 @@ func ListenAndServe(serverIPPort string, numThreads int, timeout int) {
 
 	// Forever Loop...Listening
 	fmt.Fprintf(os.Stdout, "Listener: Loop Running\n")
-	rcvBuf := make([]byte, MaxPacketSize)
 	for {
+
+		// Make a new Buffer Each time, I wasn't, but I got weird concurrent issues
+		rcvBuf := make([]byte, MaxPacketSize)
 
 		// Blocking read from Listener
 		cnt, remoteAddr, _ := conn.ReadFromUDP(rcvBuf)
@@ -173,13 +175,15 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 
 	// Create ACK Packet (Reusable)
 	ackPacket := PacketAck{}
-	ackBuffer := make([]byte, 4)
 
 	// Loop through the entire file
 	var curBlock uint16 = 1
 	var curPos int = 0
 
 	for curPos <= len(entry.Bytes) {
+
+		// Make a new Buffer Each time, I wasn't, but I got weird concurrent issues
+		ackBuffer := make([]byte, 4)
 
 		// Set the PacketSize with bounds to the end of file
 		packetSize := MaxDataBlockSize
@@ -283,7 +287,6 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 	// Create ACK Packet (Reusable)
 	ackPacket := PacketAck{}
 	packetData := PacketData{}
-	rcvBuf := make([]byte, MaxPacketSize) // Data comes in as 2048 packets
 
 	// First Block will be zero (0) in response to REQ
 	var curBlock uint16 = 0
@@ -320,6 +323,7 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 		// Perform our READs until GOOD packet
 		var cntReadFromUDP int = 0
 		var clientAddr *net.UDPAddr
+		rcvBuf := make([]byte, MaxPacketSize) // Data comes in as 2048 packets .. moved down here, as it was getting weird concurrency issues
 		for {
 			cntReadFromUDP, clientAddr, err = conn.ReadFromUDP(rcvBuf)
 

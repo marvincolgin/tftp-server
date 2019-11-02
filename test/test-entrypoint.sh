@@ -10,7 +10,7 @@ UNIQID=$1
 SIZE=$2
 SIZE=${SIZE:="10000"}
 
-ONLYPUT=1
+ONLYPUT=0
 
 # echo "Testing..."
 ./test-put.sh $UNIQID $SIZE
