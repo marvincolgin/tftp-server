@@ -40,7 +40,7 @@ There are several features that I'd like to continue building:
 * Expire a Loaded File with TTL
 * Implement Timeouts
 * ~~Tests with Lots of Clients~~ TESTED with 5/10/20/50
-* Date/Time Stamps to Messages
+* ~~Date/Time Stamps to Messages~~
 * Progress Indicators for Each Thread like NPM (Pie-in-the-Sky)
 * Speed-Up in allocation of byte buffers on WRITE
 
