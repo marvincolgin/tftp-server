@@ -12,17 +12,17 @@ func SetupListener(serverIPPort string) *net.UDPConn {
 
 	addr, err := net.ResolveUDPAddr("udp", serverIPPort)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: ResolveUDPAddr()::serverIPPort:[%s]::err.Error():[%s]\n", serverIPPort, err.Error())
+		logFatal.Printf("ResolveUDPAddr()::serverIPPort:[%s]::err.Error():[%s]\n", serverIPPort, err.Error())
 		os.Exit(1)
 	}
 
 	conn, err := net.ListenUDP("udp", addr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: ListenUDP()::addr:[%s]::err.Error():[%s]\n", addr, err.Error())
+		logFatal.Printf("ListenUDP()::addr:[%s]::err.Error():[%s]\n", addr, err.Error())
 		os.Exit(2)
 	}
 
-	fmt.Fprintf(os.Stdout, "Listener: %s\n", serverIPPort)
+	logInfo.Printf("Listener: %s\n", serverIPPort)
 
 	return conn
 }
@@ -41,14 +41,14 @@ func ListenAndServe(serverIPPort string, numThreads int, timeout int) {
 	nexus := NewFileNexus()
 
 	// Create threads and pass the dataChannel
-	fmt.Fprintf(os.Stdout, "Threads: %d Starting...", numThreads)
+	logInfo.Printf("Threads: %d Started", numThreads)
+
 	for i := 0; i < numThreads; i++ {
 		go processProtocol(nexus, dataChannel, timeout)
 	}
-	fmt.Fprintf(os.Stdout, "Done\n")
 
 	// Forever Loop...Listening
-	fmt.Fprintf(os.Stdout, "Listener: Loop Running\n")
+	logInfo.Printf("Listener: Loop Running\n")
 	for {
 
 		// Make a new Buffer Each time, I wasn't, but I got weird concurrent issues
@@ -74,12 +74,12 @@ func createUDPEndPoint(addr string, port int) (bool, *net.UDPAddr, *net.UDPConn)
 	// Establish Connection
 	localAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", addr, port))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: resolveUDPAddr()::err.Error():[%s]\n", err.Error())
+		logError.Printf("resolveUDPAddr()::err.Error():[%s]\n", err.Error())
 		return false, nil, nil
 	}
 	conn, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: listenUDP()::err.Error():[%s]\n", err.Error())
+		logError.Printf("listenUDP()::err.Error():[%s]\n", err.Error())
 		return false, localAddr, nil
 	}
 
@@ -114,10 +114,10 @@ func processProtocol(nexus *FileNexus, dataChannel chan RawPacket, timeout int) 
 				packetReq := makePacketRequest(p.Serialize())
 				doWriteReq(nexus, conn, rawPacket.Addr, packetReq)
 			default:
-				fmt.Fprintf(os.Stderr, "processProtocol()::Invalid Opcode::opcode:[%d]", opcode)
+				logError.Printf("processProtocol()::Invalid Opcode::opcode:[%d]", opcode)
 			}
 		} else {
-			fmt.Fprintf(os.Stderr, "processProtocol()::ParsePacket()::err.Error():[%s]\n", err.Error())
+			logError.Printf("processProtocol()::ParsePacket()::err.Error():[%s]\n", err.Error())
 		}
 
 		// Close the connection as we are done processing the packet
@@ -127,7 +127,7 @@ func processProtocol(nexus *FileNexus, dataChannel chan RawPacket, timeout int) 
 
 // doSendError will send an error packet on conn to client
 func doSendError(conn *net.UDPConn, code uint16, msg string) {
-	fmt.Fprintf(os.Stderr, "doSendError()::msg:[%s]\n", msg)
+	logError.Printf("doSendError()::msg:[%s]\n", msg)
 	p := NewPacketError(code, msg)
 	conn.Write(p.Serialize())
 }
@@ -137,7 +137,7 @@ func doValidateOpMode(conn *net.UDPConn, mode string) bool {
 
 	if strings.Compare(strings.ToLower(mode), "octect") == 0 {
 		errmsg := fmt.Sprintf("ERROR: mode:[%s] is not supported.\n", mode)
-		fmt.Fprintln(os.Stderr, errmsg)
+		logError.Printf(errmsg)
 		doSendError(conn, ErrorNotDefined, errmsg)
 		conn.Close()
 		return false
@@ -148,7 +148,7 @@ func doValidateOpMode(conn *net.UDPConn, mode string) bool {
 // doReadReq will process the incoming request packet and continue until file req processed
 func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
 
-	fmt.Fprintf(os.Stdout, "READ: REQUEST file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
+	logInfo.Printf("READ: REQUEST file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
 
 	// Validate OpMode
 	if !doValidateOpMode(conn, packet.Mode) {
@@ -158,7 +158,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 	// Load the File into Nexus
 	entry, err := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: doWriteReq()::GetEntry()::remoteAddr.String():[%s]::packet.Filename:[%s] err.Error():[%s]", remoteAddr.String(), packet.Filename, err.Error())
+		logError.Printf("ERROR: doWriteReq()::GetEntry()::remoteAddr.String():[%s]::packet.Filename:[%s] err.Error():[%s]", remoteAddr.String(), packet.Filename, err.Error())
 		return
 	}
 
@@ -251,21 +251,21 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 	// Useful debugging
 	md5, err := nexus.md5sum(entry)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "WRITE: Unable to md5sum()::err.Error():[%s]", err.Error())
+		logError.Printf("WRITE: Unable to md5sum()::err.Error():[%s]", err.Error())
 	}
-	fmt.Fprintf(os.Stdout, "DEBUG: READ:%s %s\n", md5, packet.Filename)
+	logDebug.Printf("DEBUG: READ:%s %s\n", md5, packet.Filename)
 
 	if fileComplete {
-		fmt.Fprintf(os.Stdout, "READ: SUCCESS file:[%s], client:[%s] md5:[%s]\n", packet.Filename, remoteAddr.String(), md5)
+		logInfo.Printf("READ: SUCCESS file:[%s], client:[%s] md5:[%s]\n", packet.Filename, remoteAddr.String(), md5)
 	} else {
-		fmt.Fprintf(os.Stdout, "READ: INCOMPLETE! file:[%s], bytes:[%d], client:[%s] md5:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String(), md5)
+		logError.Printf("READ: INCOMPLETE! file:[%s], bytes:[%d], client:[%s] md5:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String(), md5)
 	}
 }
 
 // doWriteReq will process the incoming request packet and continue until file req processed
 func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
 
-	fmt.Fprintf(os.Stdout, "WRITE: REQUEST file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
+	logInfo.Printf("WRITE: REQUEST file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
 
 	// Validate OpMode
 	if !doValidateOpMode(conn, packet.Mode) {
@@ -275,7 +275,7 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 	// Load the File into Nexus
 	entry, err := nexus.GetEntry(conn, remoteAddr.String(), packet.Filename)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: doWriteReq()::GetEntry()::remoteAddr.String():[%s]::packet.Filename:[%s] err.Error():[%s]", remoteAddr.String(), packet.Filename, err.Error())
+		logError.Printf("doWriteReq()::GetEntry()::remoteAddr.String():[%s]::packet.Filename:[%s] err.Error():[%s]", remoteAddr.String(), packet.Filename, err.Error())
 		return
 	}
 
@@ -373,18 +373,18 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 		// Useful debugging
 		md5, err := nexus.md5sum(entry)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "WRITE: Unable to md5sum()::err.Error():[%s]", err.Error())
+			logError.Printf("WRITE: Unable to md5sum()::err.Error():[%s]", err.Error())
 		}
-		fmt.Fprintf(os.Stdout, "DEBUG: READ:%s %s\n", md5, packet.Filename)
+		logDebug.Printf("DEBUG: READ:%s %s\n", md5, packet.Filename)
 
-		fmt.Fprintf(os.Stdout, "WRITE: SUCCESS file:[%s], bytes:[%d], client:[%s] md5:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String(), md5)
+		logInfo.Printf("WRITE: SUCCESS file:[%s], bytes:[%d], client:[%s] md5:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String(), md5)
 		err = nexus.saveBytes(remoteAddr.String(), packet.Filename)
 		if err != nil {
-			fmt.Fprintf(os.Stdout, "WRITE: ERROR unable to save file:[%s]", packet.Filename)
+			logInfo.Printf("WRITE: ERROR unable to save file:[%s]", packet.Filename)
 		}
 
 	} else {
-		fmt.Fprintf(os.Stdout, "WRITE: INCOMPLETE! file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
+		logError.Printf("WRITE: INCOMPLETE! file:[%s], bytes:[%d], client:[%s]\n", packet.Filename, len(entry.Bytes), remoteAddr.String())
 	}
 
 	// @TODO Nullify entry
