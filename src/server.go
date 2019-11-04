@@ -2,13 +2,9 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"strings"
-
-	ui "github.com/gizak/termui/v3"
-	"github.com/gizak/termui/v3/widgets"
 )
 
 // SetupListener will establish a listener on the given Server IP/Port
@@ -26,40 +22,13 @@ func SetupListener(serverIPPort string) *net.UDPConn {
 		os.Exit(2)
 	}
 
-<<<<<<< HEAD
 	// fmt.Fprintf(os.Stdout, "Listener: %s\n", serverIPPort)
-=======
-	logInfo.Printf("Listener: %s\n", serverIPPort)
->>>>>>> master
 
 	return conn
 }
 
 // ListenAndServe is the engine for the tftp-server
 func ListenAndServe(serverIPPort string, numThreads int, timeout int) {
-
-	// UI: Init
-	if err := ui.Init(); err != nil {
-		log.Fatalf("failed to initialize termui: %v", err)
-	}
-	defer ui.Close()
-
-	// UI: Listener
-	p := widgets.NewParagraph()
-	p.Text = fmt.Sprintf("Listener: %s", serverIPPort)
-	p.SetRect(0, 0, 25, 3)
-
-	// UI: Log
-	l := widgets.NewList()
-	l.Title = "List"
-	l.Rows = []string{}
-	l.TextStyle = ui.NewStyle(ui.ColorYellow)
-	l.WrapText = false
-	l.SetRect(10, 10, 25, 8)
-
-	// UI: Paint
-	ui.Render(p)
-	ui.Render(l)
 
 	// Listener Start
 	conn := SetupListener(serverIPPort)
@@ -72,23 +41,16 @@ func ListenAndServe(serverIPPort string, numThreads int, timeout int) {
 	nexus := NewFileNexus()
 
 	// Create threads and pass the dataChannel
-	l.Rows = append(l.Rows, fmt.Sprintf("[0] Threads: %d Started", numThreads))
+	uiLog.Rows = append(uiLog.Rows, fmt.Sprintf("Threads: %d Started", numThreads))
 	for i := 0; i < numThreads; i++ {
 		go processProtocol(nexus, dataChannel, timeout)
 	}
 
-	// Forever Loop...Listening
-	l.Rows = append(l.Rows, fmt.Sprintf("[1] Listener: Loop Running"))
-	uiEvents := ui.PollEvents()
-	for {
+	wg.Done()
 
-		// UI: Update
-		e := <-uiEvents
-		switch e.ID {
-		case "q", "<C-c>":
-			return // ABORT
-		}
-		ui.Render(p)
+	// Forever Loop...Listening
+	uiLog.Rows = append(uiLog.Rows, fmt.Sprintf("Listener: Loop Running"))
+	for {
 
 		// Make a new Buffer Each time, I wasn't, but I got weird concurrent issues
 		rcvBuf := make([]byte, MaxPacketSize)

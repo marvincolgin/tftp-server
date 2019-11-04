@@ -6,15 +6,21 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"sync"
 
+	ui "github.com/gizak/termui/v3"
+	"github.com/gizak/termui/v3/widgets"
 	"github.com/pborman/getopt"
 )
 
 var (
-	logInfo  *log.Logger
-	logError *log.Logger
-	logFatal *log.Logger
-	logDebug *log.Logger
+	logInfo    *log.Logger
+	logError   *log.Logger
+	logFatal   *log.Logger
+	logDebug   *log.Logger
+	wg         sync.WaitGroup
+	uiListener *widgets.Paragraph
+	uiLog      *widgets.List
 )
 
 // Init is the package init, called automagically
@@ -24,6 +30,32 @@ func Init(logInfoH io.Writer, logErrorH io.Writer, logFatalH io.Writer, logDebug
 	logError = log.New(logErrorH, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
 	logFatal = log.New(logFatalH, "FATAL: ", log.Ldate|log.Ltime|log.Lshortfile)
 	logDebug = log.New(logDebugH, "DEBUG: ", log.Ldate|log.Ltime|log.Lshortfile)
+
+}
+
+func uiInit(serverIPPort string) {
+
+	// UI: Init
+	if err := ui.Init(); err != nil {
+		log.Fatalf("failed to initialize termui: %v", err)
+	}
+
+	// UI: Listener
+	uiListener = widgets.NewParagraph()
+	uiListener.Text = fmt.Sprintf("Listener: %s", serverIPPort)
+	uiListener.SetRect(0, 0, 25, 3)
+
+	// UI: Log
+	uiLog = widgets.NewList()
+	uiLog.Title = "List"
+	uiLog.Rows = []string{}
+	uiLog.TextStyle = ui.NewStyle(ui.ColorYellow)
+	uiLog.WrapText = false
+	uiLog.SetRect(0, 7, 80, 17)
+
+	// UI: Paint
+	ui.Render(uiListener)
+	ui.Render(uiLog)
 
 }
 
@@ -44,8 +76,26 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Server Spin-Up!
 	serverIPPort := fmt.Sprintf("%s:%d", *optIP, *optPort)
-	ListenAndServe(serverIPPort, *optThreads, *optTimeout)
+
+	// UI: Init
+	uiInit(serverIPPort)
+	defer ui.Close()
+
+	// WORK: Start and Wait until it starts forever..loop
+	wg.Add(1)
+	go ListenAndServe(serverIPPort, *optThreads, *optTimeout)
+	wg.Wait()
+
+	// UI: Process Events
+	uiEvents := ui.PollEvents()
+	for {
+		e := <-uiEvents
+		switch e.ID {
+		case "q", "<C-c>":
+			return
+		}
+		ui.Render(uiLog)
+	}
 
 }
