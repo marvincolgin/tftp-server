@@ -21,6 +21,7 @@ var (
 	wg         sync.WaitGroup
 	uiListener *widgets.Paragraph
 	uiLog      *widgets.List
+	uiThreads  *widgets.Table
 )
 
 // Init is the package init, called automagically
@@ -33,7 +34,7 @@ func Init(logInfoH io.Writer, logErrorH io.Writer, logFatalH io.Writer, logDebug
 
 }
 
-func uiInit(serverIPPort string) {
+func uiInit(serverIPPort string, numThreads int) {
 
 	// UI: Init
 	if err := ui.Init(); err != nil {
@@ -53,9 +54,21 @@ func uiInit(serverIPPort string) {
 	uiLog.WrapText = false
 	uiLog.SetRect(0, 7, 80, 17)
 
+	uiThreads = widgets.NewTable()
+	uiThreads.Rows = [][]string{
+		[]string{"Thread", "Status"},
+	}
+	for i := 0; i < numThreads; i++ {
+		uiThreads.Rows = append(uiThreads.Rows,
+			[]string{fmt.Sprintf("Thread %d", i), "Idle"})
+	}
+	uiThreads.TextStyle = ui.NewStyle(ui.ColorWhite)
+	uiThreads.SetRect(0, 18, 60, 18+(numThreads*2))
+
 	// UI: Paint
 	ui.Render(uiListener)
 	ui.Render(uiLog)
+	ui.Render(uiThreads)
 
 }
 
@@ -79,7 +92,7 @@ func main() {
 	serverIPPort := fmt.Sprintf("%s:%d", *optIP, *optPort)
 
 	// UI: Init
-	uiInit(serverIPPort)
+	uiInit(serverIPPort, *optThreads)
 	defer ui.Close()
 
 	// WORK: Start and Wait until it starts forever..loop
@@ -95,7 +108,9 @@ func main() {
 		case "q", "<C-c>":
 			return
 		}
+		ui.Render(uiListener)
 		ui.Render(uiLog)
+		ui.Render(uiThreads)
 	}
 
 }

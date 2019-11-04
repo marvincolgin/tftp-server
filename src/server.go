@@ -22,8 +22,6 @@ func SetupListener(serverIPPort string) *net.UDPConn {
 		os.Exit(2)
 	}
 
-	// fmt.Fprintf(os.Stdout, "Listener: %s\n", serverIPPort)
-
 	return conn
 }
 
@@ -43,9 +41,10 @@ func ListenAndServe(serverIPPort string, numThreads int, timeout int) {
 	// Create threads and pass the dataChannel
 	uiLog.Rows = append(uiLog.Rows, fmt.Sprintf("Threads: %d Started", numThreads))
 	for i := 0; i < numThreads; i++ {
-		go processProtocol(nexus, dataChannel, timeout)
+		go processProtocol(i, nexus, dataChannel, timeout)
 	}
 
+	// Signal that we're pretty much initialized
 	wg.Done()
 
 	// Forever Loop...Listening
@@ -88,7 +87,7 @@ func createUDPEndPoint(addr string, port int) (bool, *net.UDPAddr, *net.UDPConn)
 }
 
 // processProtocol goroutine to process data received by main-thread and "fanned out"
-func processProtocol(nexus *FileNexus, dataChannel chan RawPacket, timeout int) {
+func processProtocol(threadNum int, nexus *FileNexus, dataChannel chan RawPacket, timeout int) {
 
 	for {
 
@@ -109,11 +108,11 @@ func processProtocol(nexus *FileNexus, dataChannel chan RawPacket, timeout int) 
 			case OpRRQ:
 				// @TODO re-evaluate this..., do I need makePacketRequest, can I use wire.go?
 				packetReq := makePacketRequest(p.Serialize())
-				doReadReq(nexus, conn, rawPacket.Addr, packetReq)
+				doReadReq(threadNum, nexus, conn, rawPacket.Addr, packetReq)
 			case OpWRQ:
 				// @TODO re-evaluate this..., do I need makePacketRequest, can I use wire.go?
 				packetReq := makePacketRequest(p.Serialize())
-				doWriteReq(nexus, conn, rawPacket.Addr, packetReq)
+				doWriteReq(threadNum, nexus, conn, rawPacket.Addr, packetReq)
 			default:
 				logError.Printf("processProtocol()::Invalid Opcode::opcode:[%d]", opcode)
 			}
@@ -147,7 +146,7 @@ func doValidateOpMode(conn *net.UDPConn, mode string) bool {
 }
 
 // doReadReq will process the incoming request packet and continue until file req processed
-func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
+func doReadReq(threadNum int, nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
 
 	logInfo.Printf("READ: REQUEST file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
 
@@ -264,7 +263,7 @@ func doReadReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pac
 }
 
 // doWriteReq will process the incoming request packet and continue until file req processed
-func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
+func doWriteReq(threadNum int, nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, packet PacketRequest) {
 
 	logInfo.Printf("WRITE: REQUEST file:[%s], client:[%s]\n", packet.Filename, remoteAddr.String())
 
@@ -279,6 +278,9 @@ func doWriteReq(nexus *FileNexus, conn *net.UDPConn, remoteAddr *net.UDPAddr, pa
 		logError.Printf("doWriteReq()::GetEntry()::remoteAddr.String():[%s]::packet.Filename:[%s] err.Error():[%s]", remoteAddr.String(), packet.Filename, err.Error())
 		return
 	}
+
+	// ui
+	uiThreads.Rows[threadNum] = []string{fmt.Sprintf("Thread %d", threadNum), packet.Filename}
 
 	// Zero out the file
 	if len(entry.Bytes) > 0 {
